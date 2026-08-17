@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: ./backend
+    container_name: medical-backend
+    environment:
+      DATA_DIR: /data
+      DATABASE_PATH: /data/medical-assistant-master.db
+      UPLOAD_DIR: /data/uploads
+      CHROMA_DIR: /data/chroma
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # 留空 -> 离线兜底模式；如需接入真实大模型，在 .env 中填写后重启即可
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-}
+      CHUNK_SIZE: ${CHUNK_SIZE:-500}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-50}
+      TOP_K: ${TOP_K:-5}
+      EMBED_DIM: ${EMBED_DIM:-256}
+    volumes:
+      - medical_data:/data
+    ports:
+      - "8010:8010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8010/api/health',timeout=3); sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    container_name: medical-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+
+volumes:
+  medical_data:

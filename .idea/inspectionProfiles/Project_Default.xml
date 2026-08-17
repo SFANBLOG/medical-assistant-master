@@ -1,0 +1,313 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="DuplicatedCode" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <Languages>
+        <language minSize="566" name="Python" />
+      </Languages>
+    </inspection_tool>
+    <inspection_tool class="Eslint" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="HtmlUnknownTag" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="myValues">
+        <value>
+          <list size="7">
+            <item index="0" class="java.lang.String" itemvalue="nobr" />
+            <item index="1" class="java.lang.String" itemvalue="noembed" />
+            <item index="2" class="java.lang.String" itemvalue="comment" />
+            <item index="3" class="java.lang.String" itemvalue="noscript" />
+            <item index="4" class="java.lang.String" itemvalue="embed" />
+            <item index="5" class="java.lang.String" itemvalue="script" />
+            <item index="6" class="java.lang.String" itemvalue="style" />
+          </list>
+        </value>
+      </option>
+      <option name="myCustomValuesEnabled" value="true" />
+    </inspection_tool>
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="torchvision" />
+          <option value="aiohttp" />
+          <option value="anthropic" />
+          <option value="beautifulsoup4" />
+          <option value="dashscope" />
+          <option value="dataclasses-json" />
+          <option value="fastapi" />
+          <option value="fastmcp" />
+          <option value="filetype" />
+          <option value="html5lib" />
+          <option value="httpx-sse" />
+          <option value="jq" />
+          <option value="jsonref" />
+          <option value="jupyter" />
+          <option value="langchain" />
+          <option value="langchain-anthropic" />
+          <option value="langchain-classic" />
+          <option value="langchain-community" />
+          <option value="langchain-deepseek" />
+          <option value="langchain-experimental" />
+          <option value="langchain-mcp-adapters" />
+          <option value="langchain-ollama" />
+          <option value="langchain-openai" />
+          <option value="langchain-openrouter" />
+          <option value="langchain-tavily" />
+          <option value="langchain-text-splitters" />
+          <option value="langdetect" />
+          <option value="langgraph" />
+          <option value="langgraph-checkpoint" />
+          <option value="langgraph-checkpoint-postgres" />
+          <option value="langgraph-prebuilt" />
+          <option value="langgraph-sdk" />
+          <option value="loguru" />
+          <option value="lxml" />
+          <option value="markdown" />
+          <option value="mcp" />
+          <option value="msoffcrypto-tool" />
+          <option value="nltk" />
+          <option value="olefile" />
+          <option value="ollama" />
+          <option value="onnx" />
+          <option value="onnxruntime" />
+          <option value="openai" />
+          <option value="opencv-python" />
+          <option value="openpyxl" />
+          <option value="openrouter" />
+          <option value="pdf2image" />
+          <option value="pdfminer-six" />
+          <option value="pi-heif" />
+          <option value="pikepdf" />
+          <option value="psycopg" />
+          <option value="psycopg-pool" />
+          <option value="pydantic" />
+          <option value="pydantic-settings" />
+          <option value="pyjwt" />
+          <option value="pymilvus" />
+          <option value="pypandoc-binary" />
+          <option value="pypdf" />
+          <option value="pypdfium2" />
+          <option value="pytest" />
+          <option value="python-docx" />
+          <option value="python-dotenv" />
+          <option value="python-iso639" />
+          <option value="python-magic" />
+          <option value="python-oxmsg" />
+          <option value="python-pptx" />
+          <option value="pytz" />
+          <option value="regex" />
+          <option value="rich" />
+          <option value="safetensors" />
+          <option value="scikit-learn" />
+          <option value="scipy" />
+          <option value="sqlalchemy" />
+          <option value="sse-starlette" />
+          <option value="tencentcloud-sdk-python" />
+          <option value="tiktoken" />
+          <option value="transformers" />
+          <option value="typer" />
+          <option value="unstructured" />
+          <option value="unstructured-client" />
+          <option value="unstructured-inference" />
+          <option value="unstructured-pytesseract" />
+          <option value="watchfiles" />
+          <option value="xlrd" />
+          <option value="xlsxwriter" />
+          <option value="addict" />
+          <option value="dataset" />
+          <option value="datasets" />
+          <option value="langchain-core" />
+          <option value="milvus-lite" />
+          <option value="modelscope" />
+          <option value="pillow" />
+          <option value="pymupdf" />
+          <option value="rapidocr-onnxruntime" />
+          <option value="sentence-transformers" />
+          <option value="torch" />
+          <option value="accelerate" />
+          <option value="aiofiles" />
+          <option value="annotated-doc" />
+          <option value="annotated-types" />
+          <option value="anyio" />
+          <option value="appdirs" />
+          <option value="async-timeout" />
+          <option value="backoff" />
+          <option value="bcrypt" />
+          <option value="build" />
+          <option value="certifi" />
+          <option value="cffi" />
+          <option value="chardet" />
+          <option value="charset-normalizer" />
+          <option value="chromadb" />
+          <option value="coloredlogs" />
+          <option value="cryptography" />
+          <option value="dill" />
+          <option value="durationpy" />
+          <option value="emoji" />
+          <option value="exceptiongroup" />
+          <option value="faiss-cpu" />
+          <option value="filelock" />
+          <option value="FlagEmbedding" />
+          <option value="fsspec" />
+          <option value="googleapis-common-protos" />
+          <option value="greenlet" />
+          <option value="grpcio" />
+          <option value="hf-xet" />
+          <option value="huggingface_hub" />
+          <option value="humanfriendly" />
+          <option value="importlib_resources" />
+          <option value="ir_datasets" />
+          <option value="jieba" />
+          <option value="kubernetes" />
+          <option value="langchain-chroma" />
+          <option value="langchain-unstructured" />
+          <option value="langsmith" />
+          <option value="lz4" />
+          <option value="marshmallow" />
+          <option value="milvus-model" />
+          <option value="mmh3" />
+          <option value="mpmath" />
+          <option value="multiprocess" />
+          <option value="mypy_extensions" />
+          <option value="nest-asyncio" />
+          <option value="networkx" />
+          <option value="numexpr" />
+          <option value="numpy" />
+          <option value="opentelemetry-api" />
+          <option value="opentelemetry-exporter-otlp-proto-common" />
+          <option value="opentelemetry-exporter-otlp-proto-grpc" />
+          <option value="opentelemetry-proto" />
+          <option value="opentelemetry-sdk" />
+          <option value="opentelemetry-semantic-conventions" />
+          <option value="ormsgpack" />
+          <option value="overrides" />
+          <option value="packaging" />
+          <option value="pandas" />
+          <option value="peft" />
+          <option value="posthog" />
+          <option value="psutil" />
+          <option value="pyarrow" />
+          <option value="pybase64" />
+          <option value="pyclipper" />
+          <option value="pycparser" />
+          <option value="PyMuPDFb" />
+          <option value="PyMySQL" />
+          <option value="PyPika" />
+          <option value="pyproject_hooks" />
+          <option value="ragas" />
+          <option value="RapidFuzz" />
+          <option value="redis" />
+          <option value="requests" />
+          <option value="rpds-py" />
+          <option value="sentencepiece" />
+          <option value="shapely" />
+          <option value="simplejson" />
+          <option value="sortedcontainers" />
+          <option value="soupsieve" />
+          <option value="starlette" />
+          <option value="tabulate" />
+          <option value="tokenizers" />
+          <option value="tomli" />
+          <option value="tqdm" />
+          <option value="typing-inspect" />
+          <option value="tzdata" />
+          <option value="ujson" />
+          <option value="uuid_utils" />
+          <option value="uvicorn" />
+          <option value="uvloop" />
+          <option value="websocket-client" />
+          <option value="websockets" />
+          <option value="wikipedia" />
+          <option value="yarl" />
+          <option value="setuptools" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N802" />
+          <option value="N806" />
+          <option value="N801" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyShadowingBuiltinsInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredNames">
+        <list>
+          <option value="object" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStringConversionWithoutDunderMethodInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredTypes">
+        <list>
+          <option value="types.NoneType" />
+          <option value="_io.TextIOWrapper" />
+          <option value="str" />
+          <option value="int" />
+          <option value="float" />
+          <option value="complex" />
+          <option value="set" />
+          <option value="frozenset" />
+          <option value="bytes" />
+          <option value="bytearray" />
+          <option value="memoryview" />
+          <option value="slice" />
+          <option value="list" />
+          <option value="dict" />
+          <option value="bool" />
+          <option value="range" />
+          <option value="tuple" />
+          <option value="pathlib.PurePath" />
+          <option value="uuid.UUID" />
+          <option value="decimal.Decimal" />
+          <option value="fractions.Fraction" />
+          <option value="xml.etree.ElementTree.Element" />
+          <option value="typing.Generator" />
+          <option value="re.Match" />
+          <option value="typing.Awaitable" />
+          <option value="pymysql.connections.Connection" />
+          <option value="property" />
+          <option value="numpy.ndarray" />
+          <option value="numpy.dtype" />
+          <option value="numpy.floating" />
+          <option value="numpy.signedinteger" />
+          <option value="pandas.core.series.Series" />
+          <option value="pandas.core.indexes.base.Index" />
+          <option value="pandas.core.arrays.categorical.Categorical" />
+          <option value="pandas.core.arrays.base.ExtensionArray" />
+          <option value="pandas.core.frame.DataFrame" />
+          <option value="pandas._libs.tslibs.timedeltas.Timedelta" />
+          <option value="torch._C.dtype" />
+          <option value="numpy.number" />
+          <option value="numpy.timedelta64" />
+          <option value="torch._C.device" />
+          <option value="typing.Iterator" />
+          <option value="torch.utils.data.dataloader.DataLoader" />
+          <option value="keras.src.legacy.preprocessing.text.Tokenizer" />
+          <option value="map" />
+          <option value="zip" />
+          <option value="datasets.iterable_dataset.IterableColumn" />
+          <option value="pymilvus.milvus_client.milvus_client.MilvusClient" />
+          <option value="cache.redis_client.RedisClient" />
+        </list>
+      </option>
+      <option name="reportedTypes">
+        <list>
+          <option value="object" />
+          <option value="types.FunctionType" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="types.NoneType.*" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="SqlNoDataSourceInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="SqlResolveInspection" enabled="true" level="ERROR" enabled_by_default="true">
+      <option name="suppressForPossibleStringLiterals" value="true" />
+    </inspection_tool>
+  </profile>
+</component>
