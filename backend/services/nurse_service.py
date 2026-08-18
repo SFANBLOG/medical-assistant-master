@@ -57,11 +57,15 @@ def create_nursing_record(
         raise ApiError("护理记录内容不能为空", 400)
     if record_type not in ("daily", "medication", "vitals", "other"):
         record_type = "daily"
+    if not recorded_at:
+        from datetime import datetime
+
+        recorded_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_conn()
     cur = conn.execute(
-        """INSERT INTO nursing_records (patient_id, nurse_id, content, record_type, recorded_at)
-           VALUES (?,?,?,?, COALESCE(?, datetime('now','localtime')))""",
-        (patient_id, nurse_id, content, record_type, recorded_at or None),
+        "INSERT INTO nursing_records (patient_id, nurse_id, content, record_type, recorded_at) "
+        "VALUES (?,?,?,?,?)",
+        (patient_id, nurse_id, content, record_type, recorded_at),
     )
     conn.commit()
     row = conn.execute(

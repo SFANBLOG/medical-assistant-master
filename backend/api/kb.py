@@ -51,7 +51,8 @@ def upload_document(kb_id: int):
     file = request.files.get("file")
     if not file:
         raise ApiError("未上传文件", 400)
-    doc = kb_service.add_document(g.user, kb_id, file)
+    visibility = request.form.get("visibility", "") or request.args.get("visibility", "")
+    doc = kb_service.add_document(g.user, kb_id, file, visibility)
     return doc, 201
 
 

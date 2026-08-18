@@ -16,8 +16,13 @@ class ChunkHit:
     score: float = 0.0
 
 
-def retrieve(cfg, kb_id: int, question: str, top_k: int = 5, alpha: float = 0.2) -> list[ChunkHit]:
-    """召回 top_k 片段并重排。over-fetch 后按 相似度 + α*关键词重叠 排序。"""
+def retrieve(cfg, kb_id: int, question: str, top_k: int = 5, alpha: float = 0.2,
+             allow_private: bool = True) -> list[ChunkHit]:
+    """召回 top_k 片段并重排。over-fetch 后按 相似度 + α*关键词重叠 排序。
+
+    allow_private=False 时仅保留公开文档片段（患者/群众/护士查询使用），
+    确保普通用户只能检索到公开文档。
+    """
     llm = get_llm(cfg)
     qv = llm.embed([question])[0]
     store = get_vector_store(cfg)
@@ -25,6 +30,8 @@ def retrieve(cfg, kb_id: int, question: str, top_k: int = 5, alpha: float = 0.2)
 
     hits: list[ChunkHit] = []
     for r in raw:
+        if not allow_private and r["metadata"].get("visibility", "public") != "public":
+            continue
         sim = 1.0 / (1.0 + r["distance"])
         kw = keyword_overlap(question, r["text"])
         hits.append(

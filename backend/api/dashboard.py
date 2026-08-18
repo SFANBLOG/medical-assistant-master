@@ -15,27 +15,26 @@ def stats():
     is_staff = user["role"] in ("doctor", "admin")
 
     if is_staff:
-        kb_scope = ""  # 全系统
-        params: tuple = ()
+        kb_where, kb_params = "", ()
+        doc_cond = ""  # 医生/管理员统计全部文档
     else:
-        kb_scope = "WHERE visibility='public' OR owner_id=?"
-        params = (user["id"],)
+        # 患者/群众/护士仅统计公开知识库中的公开文档
+        kb_where, kb_params = "WHERE (k.visibility = 'public' OR k.owner_id = ?)", (user["id"],)
+        doc_cond = "AND d.visibility = 'public'"
 
     kb_count = conn.execute(
-        f"SELECT COUNT(*) FROM knowledge_bases {kb_scope}", params
+        f"SELECT COUNT(*) FROM knowledge_bases k {kb_where}", kb_params
     ).fetchone()[0]
     doc_count = conn.execute(
-        f"""SELECT COALESCE(SUM(doc_count),0) FROM
-            (SELECT (SELECT COUNT(*) FROM documents d WHERE d.kb_id=k.id) AS doc_count
-             FROM knowledge_bases k {kb_scope})""",
-        params,
+        f"""SELECT COUNT(DISTINCT d.id) FROM documents d
+            JOIN knowledge_bases k ON k.id = d.kb_id {kb_where} {doc_cond}""",
+        kb_params,
     ).fetchone()[0]
-    chunk_count = conn.execute(
-        f"""SELECT COALESCE(SUM(chunk_count),0) FROM
-            (SELECT (SELECT COALESCE(SUM(d.chunk_count),0) FROM documents d WHERE d.kb_id=k.id) AS chunk_count
-             FROM knowledge_bases k {kb_scope})""",
-        params,
-    ).fetchone()[0]
+    chunk_count = int(conn.execute(
+        f"""SELECT COALESCE(SUM(d.chunk_count),0) FROM documents d
+            JOIN knowledge_bases k ON k.id = d.kb_id {kb_where} {doc_cond}""",
+        kb_params,
+    ).fetchone()[0])
 
     if is_staff:
         conv_scope, conv_params = "", ()
@@ -52,9 +51,9 @@ def stats():
     docs_by_kb = [
         dict(r)
         for r in conn.execute(
-            f"""SELECT k.name, (SELECT COUNT(*) FROM documents d WHERE d.kb_id=k.id) AS doc_count
-                FROM knowledge_bases k {kb_scope} ORDER BY doc_count DESC LIMIT 10""",
-            params,
+            f"""SELECT k.name, (SELECT COUNT(*) FROM documents d WHERE d.kb_id=k.id {doc_cond}) AS doc_count
+                FROM knowledge_bases k {kb_where} ORDER BY doc_count DESC LIMIT 10""",
+            kb_params,
         ).fetchall()
     ]
     result = {

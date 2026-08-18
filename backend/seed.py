@@ -1,16 +1,19 @@
-"""演示数据播种（幂等）：5 种角色演示账号 + 12 个疾病知识库 + 各表 ≥50 条业务数据。
+"""演示数据播种（幂等）：5 种角色演示账号 + 12 个疾病知识库（公开/私有文档） + 各表 ≥50 条业务数据。
 
-数据库文件：backend/data/medical-assistant-master.db（由 config.DATABASE_PATH 决定）。
+数据库：MySQL `medical-assistant-master`（或 DB_TYPE=sqlite 时的本地 SQLite）。
 运行：python seed.py 或 python app.py --seed
+
+文档来源：backend/data/kb_docs_src/<知识库>/公开|私有/*.md，
+落盘到 backend/data/uploads/<知识库>/公开|私有/ 并向量化入库。
 """
 import os
 import uuid
 from datetime import date, timedelta
 
+from data.kb_docs import DISEASE_KBS, KB_DOCS_SRC_DIR
 from models.db import get_conn, init_schema
 from services import auth_service
 from services.doc_pipeline import process_document
-from data.kb_docs import DISEASE_KBS
 from utils.file_utils import safe_folder_name
 
 DEMO_PASSWORD = "demo123"
@@ -66,6 +69,9 @@ CONVERSATION_ANSWERS = [
     "应就地固定制动，开放性伤口覆盖止血后尽快送医，勿强行复位。",
 ]
 
+PUBLIC_DIR = "公开"
+PRIVATE_DIR = "私有"
+
 
 def _ensure_user(username: str, password: str, role: str, display_name: str = "") -> bool:
     """创建用户（若已存在则跳过），返回是否新建。"""
@@ -99,29 +105,31 @@ def _create_kb_if_missing(name: str, owner_id, visibility: str = "private",
     return cur.lastrowid, True
 
 
-def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str, cfg) -> None:
-    """幂等写入文档文件并向量化入库（文档落在 uploads/<知识库名>/ 文件夹）。"""
+def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str,
+                        visibility: str, cfg) -> None:
+    """幂等写入文档文件并向量化入库（落在 uploads/<知识库>/公开|私有/ 目录）。"""
     conn = get_conn()
     exists = conn.execute(
         "SELECT 1 FROM documents WHERE kb_id=? AND filename=?", (kb_id, filename)
     ).fetchone()
     if exists:
         return
+    sub_dir = PUBLIC_DIR if visibility == "public" else PRIVATE_DIR
     folder = safe_folder_name(kb_name, str(kb_id))
-    rel_dir = os.path.join(cfg["UPLOAD_DIR"], folder)
+    rel_dir = os.path.join(cfg["UPLOAD_DIR"], folder, sub_dir)
     os.makedirs(rel_dir, exist_ok=True)
-    rel_path = os.path.join(folder, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
+    rel_path = os.path.join(folder, sub_dir, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
     abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     cur = conn.execute(
-        """INSERT INTO documents (kb_id, filename, file_path, file_type, status)
-           VALUES (?,?,?,?, 'processing')""",
-        (kb_id, filename, rel_path, os.path.splitext(filename)[1].lstrip(".")),
+        """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
+           VALUES (?, ?, ?, ?, ?, 'processing')""",
+        (kb_id, filename, rel_path, os.path.splitext(filename)[1].lstrip("."), visibility),
     )
     conn.commit()
-    process_document(cur.lastrowid, kb_id, abs_path, filename)
+    process_document(cur.lastrowid, kb_id, abs_path, filename, visibility)
 
 
 # ---------- 用户 ----------
@@ -143,11 +151,22 @@ def _seed_users() -> None:
 
 # ---------- 知识库与文档 ----------
 def _seed_disease_kbs(cfg) -> None:
-    """12 个疾病知识库，每库 3-5 篇科普文档（共 50 篇）。"""
-    for name, meta in DISEASE_KBS.items():
-        kb_id, _ = _create_kb_if_missing(name, None, "public", meta["description"])
-        for filename, content in meta["docs"].items():
-            _add_doc_if_missing(kb_id, name, filename, content, cfg)
+    """12 个疾病知识库：公开 10 篇 + 私有 10 篇文档。"""
+    for name, description in DISEASE_KBS.items():
+        kb_id, _ = _create_kb_if_missing(name, None, "public", description)
+        src_dir = os.path.join(KB_DOCS_SRC_DIR, name)
+        for sub_dir, visibility in ((PUBLIC_DIR, "public"), (PRIVATE_DIR, "private")):
+            src_sub = os.path.join(src_dir, sub_dir)
+            if not os.path.isdir(src_sub):
+                continue
+            files = sorted(
+                f for f in os.listdir(src_sub)
+                if f.lower().endswith((".md", ".txt"))
+            )
+            for fname in files:
+                with open(os.path.join(src_sub, fname), encoding="utf-8") as f:
+                    content = f.read()
+                _add_doc_if_missing(kb_id, name, fname, content, visibility, cfg)
 
 
 def _seed_filler_kbs() -> None:
@@ -221,7 +240,7 @@ def _seed_citations() -> None:
         source = (doc["filename"] + "：" + msg["content"])[:200]
         conn.execute(
             """INSERT INTO citations (message_id, document_id, chunk_index, source_text, title, similarity)
-               VALUES (?,?,0,?,?,0.85)""",
+               VALUES (?, ?, 0, ?, ?, 0.85)""",
             (msg["id"], doc["id"], source, doc["filename"]),
         )
     conn.commit()
@@ -252,8 +271,9 @@ def _seed_medical_volume() -> None:
         discharge = (admit + timedelta(days=(i % 14) + 2)).isoformat() if status == "discharged" else None
         conn.execute(
             """INSERT INTO hospitalizations
-                 (patient_id, admit_date, discharge_date, department, ward, bed_no, diagnosis, doctor_id, status, total_cost)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               (patient_id, admit_date, discharge_date, department, ward, bed_no, diagnosis, doctor_id, status,
+                total_cost)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (p["id"], admit.isoformat(), discharge, DEPARTMENTS[i % len(DEPARTMENTS)],
              f"{i % 3 + 3}病区", f"{i % 20 + 1}床", DIAGNOSES[i % len(DIAGNOSES)],
              doctor["id"] if doctor else None, status, round(((i % 30) + 5) * 100, 2)),
@@ -265,7 +285,7 @@ def _seed_medical_volume() -> None:
         bill_no = f"BLL{date.today().strftime('%Y%m%d')}{n:05d}"
         conn.execute(
             """INSERT INTO bills (patient_id, bill_no, category, description, amount, status, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (p["id"], bill_no, cat, f"{cat}费用", round(((i % 40) + 1) * 20, 2),
              "paid" if i % 2 else "unpaid",
              (date.today() - timedelta(days=i % 30)).isoformat()),
@@ -278,7 +298,7 @@ def _seed_medical_volume() -> None:
         status = ["booked", "confirmed", "visited", "cancelled"][i % 4]
         conn.execute(
             """INSERT INTO appointments (patient_id, doctor_id, department, date, time_slot, symptom, fee, status)
-               VALUES (?,?,?,?,?,?,20,?)""",
+               VALUES (?, ?, ?, ?, ?, ?, 20, ?)""",
             (p["id"], doctor["id"] if doctor else None, DEPARTMENTS[i % len(DEPARTMENTS)],
              (date.today() + timedelta(days=i % 7)).isoformat(), APPT_SLOTS[i % len(APPT_SLOTS)],
              DIAGNOSES[i % len(DIAGNOSES)], status),
@@ -289,7 +309,7 @@ def _seed_medical_volume() -> None:
         nurse = nurses[i % len(nurses)] if nurses else None
         conn.execute(
             """INSERT INTO nursing_records (patient_id, nurse_id, content, record_type, recorded_at)
-               VALUES (?,?,?,?,?)""",
+               VALUES (?, ?, ?, ?, ?)""",
             (p["id"], nurse["id"] if nurse else None, NURSING_TEXTS[i % len(NURSING_TEXTS)],
              NURSING_TYPES[i % len(NURSING_TYPES)],
              (date.today() - timedelta(days=i % 15)).isoformat()),
@@ -302,7 +322,7 @@ def _seed_medical_volume() -> None:
         s = staff[i % len(staff)]
         conn.execute(
             """INSERT INTO schedules (staff_id, work_date, shift, department, status)
-               VALUES (?,?,?,?,'on_duty')""",
+               VALUES (?, ?, ?, ?, 'on_duty')""",
             (s["id"], (date.today() + timedelta(days=i % 30)).isoformat(),
              SHIFTS[i % len(SHIFTS)], DEPARTMENTS[i % len(DEPARTMENTS)]),
         )
@@ -325,6 +345,13 @@ def _print_summary() -> None:
     for t in tables:
         c = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f"  - {t}: {c}")
+    pub = conn.execute(
+        "SELECT COUNT(*) FROM documents WHERE visibility='public'"
+    ).fetchone()[0]
+    pri = conn.execute(
+        "SELECT COUNT(*) FROM documents WHERE visibility='private'"
+    ).fetchone()[0]
+    print(f"  - 文档可见性：公开 {pub} / 私有 {pri}")
 
 
 def seed_all(app) -> None:

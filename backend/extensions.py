@@ -2,6 +2,13 @@
 import threading
 from typing import Optional
 
+# chromadb 在部分平台（无 MSVC 编译工具的 Windows）无法安装，此处可选导入，
+# 不可用时自动降级为纯 Python 的 NumpyStore（见 get_vector_store）。
+try:
+    import chromadb
+except ImportError:  # pragma: no cover
+    chromadb = None
+
 from services.llm import LLMProvider, OfflineFallbackLLM, OpenAICompatLLM
 
 _llm: Optional[LLMProvider] = None
@@ -43,36 +50,32 @@ def get_vector_store(cfg):
 
 
 class ChromaStore:
-    """基于 PersistentClient 的向量库封装。
-
-    约定：
-    - 每个知识库一个 collection：kb_{id}；
-    - 始终显式传入 embeddings，避免加载 Chroma 内置 ONNX 默认 embedding；
-    - 所有集合操作置于进程级锁下，避免多线程（gthread）并发写问题；
-    - 使用 PersistentClient（嵌入式、无端口），绝不使用 chromadb.Client()。
-    """
-
-    def __init__(self, persist_dir: str):
-        import chromadb
-
-        self._client = chromadb.PersistentClient(path=persist_dir)
+    def __init__(self, persist_directory="./chroma_db"):
+        # 确保使用正确的初始化方式
+        self._client = chromadb.PersistentClient(path=persist_directory)
+        self._collections = {}
         self._lock = threading.Lock()
-        self._batch = 100
+        self._batch = 512
 
-    def _col(self, kb_id: int):
-        return self._client.get_or_create_collection(
-            f"kb_{kb_id}", metadata={"hnsw:space": "l2"}
-        )
+    def _col(self, kb_id):
+        if kb_id not in self._collections:
+            # 获取或创建集合
+            self._collections[kb_id] = self._client.get_or_create_collection(
+                name=f"kb_{kb_id}",
+                metadata={"hnsw:space": "cosine"}
+            )
+        return self._collections[kb_id]
 
+    # ... 其他方法
     def upsert(self, kb_id: int, ids, embeddings, documents, metadatas) -> None:
         with self._lock:
             col = self._col(kb_id)
             for i in range(0, len(ids), self._batch):
                 col.upsert(
-                    ids=ids[i : i + self._batch],
-                    embeddings=embeddings[i : i + self._batch],
-                    documents=documents[i : i + self._batch],
-                    metadatas=metadatas[i : i + self._batch],
+                    ids=ids[i: i + self._batch],
+                    embeddings=embeddings[i: i + self._batch],
+                    documents=documents[i: i + self._batch],
+                    metadatas=metadatas[i: i + self._batch],
                 )
 
     def query(self, kb_id: int, embedding: list[float], top_k: int = 5) -> list[dict]:

@@ -5,6 +5,9 @@
     python app.py --seed     # 先播种演示数据
 """
 import os
+import secrets
+# 生成一个安全的随机密钥
+JWT_SECRET_KEY = secrets.token_hex(32)  # 64字符的 hex 字符串
 # huggingface国内镜像
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import sys
@@ -60,7 +63,6 @@ def _auto_seed(app) -> None:
 
 
 app = create_app()
-
 
 if __name__ == "__main__":
     if "--seed" in sys.argv:

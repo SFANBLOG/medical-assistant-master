@@ -6,11 +6,10 @@
     </content>
     <orderEntry type="jdk" jdkName="C:\huanjing\python\3.11.9\python.exe" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="AI大模型-高新杰" />
+    <orderEntry type="module" module-name="yu-ai-learn-main" />
   </component>
-  <component name="PackageRequirementsSettings" />
   <component name="PyDocumentationSettings">
     <option name="format" value="PLAIN" />
   </component>
-  <component name="ReSTService" />
-  <component name="TestRunnerService" />
 </module>

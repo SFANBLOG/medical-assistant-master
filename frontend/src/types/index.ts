@@ -8,11 +8,13 @@ export interface User {
   created_at?: string
 }
 
+export type Visibility = 'public' | 'private'
+
 export interface KnowledgeBase {
   id: number
   name: string
   description: string
-  visibility: 'private' | 'public'
+  visibility: Visibility
   owner_id: number | null
   owner_name?: string
   created_at: string
@@ -25,6 +27,7 @@ export interface DocumentItem {
   kb_id: number
   filename: string
   file_type: string
+  visibility: Visibility
   chunk_count: number
   status: 'processing' | 'ready' | 'failed'
   error?: string
@@ -99,12 +102,12 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: '管理员',
 }
 
-export const ROLE_COLORS: Record<Role, string> = {
-  patient: 'blue',
-  doctor: 'volcano',
-  nurse: 'purple',
-  public: 'green',
-  admin: 'magenta',
+export const ROLE_TAG_TYPES: Record<Role, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
+  patient: 'primary',
+  doctor: 'danger',
+  nurse: 'success',
+  public: 'success',
+  admin: 'warning',
 }
 
 // ===== 患者健康档案 / 医护业务类型 =====

@@ -1,14 +1,23 @@
-"""知识库与文档服务：所有权 / 角色权限校验。
+"""知识库与文档服务：角色权限 + 公开/私有 权限模型。
 
-角色权限：
-- 医生/管理员：可创建知识库、管理公开知识库；
-- 患者/护士/群众：只能浏览公开知识库（用于咨询），不可管理知识库。
+角色权限（依据安医大附属医院 RAG 系统角色划分）：
+- 医生 / 管理员：可创建知识库、上传/管理文档（管理员可管理全部，医生可管理
+  公开知识库及自己创建的私有知识库）；
+- 患者 / 护士 / 群众：只能基于「公开知识库 + 公开文档」进行查询，不可创建或管理。
+
+文档可见性：
+- 公开文档：存于 uploads/<知识库>/公开/，所有可访问该知识库的用户可见；
+- 私有文档：存于 uploads/<知识库>/私有/，仅医生 / 管理员可见（患者/群众/护士
+  查询时不会检索到）。
 """
 import os
 import uuid
 
 from models.db import get_conn
 from utils.errors import ApiError
+
+PUBLIC_DIR = "公开"
+PRIVATE_DIR = "私有"
 
 
 def can_manage_public(user: dict) -> bool:
@@ -29,24 +38,52 @@ def can_delete_kb(user: dict, kb: dict) -> bool:
     )
 
 
+def can_view_private_docs(user: dict) -> bool:
+    """患者 / 群众 / 护士只能看到公开文档。"""
+    return user["role"] in ("doctor", "admin")
+
+
+def can_upload_doc(user: dict, kb: dict) -> bool:
+    """上传文档权限：管理员任意；医生可上传到公开知识库或自己的私有知识库。"""
+    if user["role"] == "admin":
+        return True
+    if user["role"] != "doctor":
+        return False
+    return kb["visibility"] == "public" or kb["owner_id"] == user["id"]
+
+
+def _doc_scope(user: dict) -> tuple[str, list]:
+    """返回文档可见性过滤 SQL（供列表 / 计数使用）。"""
+    if can_view_private_docs(user):
+        return "1=1", []
+    return "d.visibility = 'public'", []
+
+
 def list_kbs(user: dict) -> list[dict]:
     conn = get_conn()
     if user["role"] == "admin":
         where, params = "1=1", []
     else:
         where, params = "(k.visibility = 'public' OR k.owner_id = ?)", [user["id"]]
+    doc_where, doc_params = _doc_scope(user)
     rows = conn.execute(
         f"""SELECT k.id, k.name, k.description, k.visibility, k.owner_id, k.created_at,
                   u.display_name AS owner_name,
-                  (SELECT COUNT(*) FROM documents d WHERE d.kb_id = k.id) AS doc_count,
-                  (SELECT COALESCE(SUM(d.chunk_count),0) FROM documents d WHERE d.kb_id = k.id) AS chunk_count
+                  (SELECT COUNT(*) FROM documents d WHERE d.kb_id = k.id AND {doc_where}) AS doc_count,
+                  (SELECT COALESCE(SUM(d.chunk_count),0) FROM documents d
+                     WHERE d.kb_id = k.id AND {doc_where}) AS chunk_count
            FROM knowledge_bases k
            LEFT JOIN users u ON u.id = k.owner_id
            WHERE {where}
            ORDER BY k.created_at DESC""",
-        params,
+        params + doc_params,
     ).fetchall()
-    return [dict(r) for r in rows]
+    items = []
+    for r in rows:
+        row = dict(r)
+        row["chunk_count"] = int(row["chunk_count"] or 0)  # MySQL SUM 返回 Decimal，统一转 int
+        items.append(row)
+    return items
 
 
 def create_kb(user: dict, name: str, description: str = "", visibility: str = "private") -> dict:
@@ -76,8 +113,9 @@ def get_kb(user: dict, kb_id: int) -> dict:
     kb = dict(row)
     if not can_view_kb(user, kb):
         raise ApiError("无权访问该知识库", 403)
+    doc_where, doc_params = _doc_scope(user)
     kb["doc_count"] = conn.execute(
-        "SELECT COUNT(*) FROM documents WHERE kb_id = ?", (kb_id,)
+        f"SELECT COUNT(*) FROM documents d WHERE d.kb_id = ? AND {doc_where}", (kb_id,) + tuple(doc_params)
     ).fetchone()[0]
     return kb
 
@@ -101,47 +139,63 @@ def delete_kb(user: dict, kb_id: int) -> None:
 
 
 def list_documents(user: dict, kb_id: int) -> list[dict]:
-    get_kb(user, kb_id)  # 权限校验
+    kb = get_kb(user, kb_id)  # 权限校验
     conn = get_conn()
+    doc_where, doc_params = _doc_scope(user)
     rows = conn.execute(
-        "SELECT * FROM documents WHERE kb_id = ? ORDER BY created_at DESC", (kb_id,)
+        f"""SELECT * FROM documents d WHERE d.kb_id = ? AND {doc_where}
+            ORDER BY d.created_at DESC, d.id DESC""",
+        (kb_id,) + tuple(doc_params),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def _can_write_kb(user: dict, kb: dict) -> bool:
-    # 仅医生/管理员可向知识库写入（患者/护士/群众不可管理知识库）
-    return user["role"] in ("doctor", "admin")
+def _visibility_dir(visibility: str) -> str:
+    return PUBLIC_DIR if visibility == "public" else PRIVATE_DIR
 
 
-def add_document(user: dict, kb_id: int, upload_file) -> dict:
+def add_document(user: dict, kb_id: int, upload_file, visibility: str = "") -> dict:
+    """上传文档：落盘到 uploads/<知识库>/公开|私有/ 目录并向量化入库。
+
+    处理失败不再抛出 500，而是返回 status='failed' 且带 error 信息的文档行，
+    便于前端展示具体原因并允许删除（解决上传出错不可控的问题）。
+    """
     from flask import current_app
 
     cfg = current_app.config
     kb = get_kb(user, kb_id)
-    if not _can_write_kb(user, kb):
+    if not can_upload_doc(user, kb):
         raise ApiError("无权向该知识库上传文档", 403)
 
+    visibility = visibility or kb["visibility"]
+    if visibility not in ("public", "private"):
+        raise ApiError("无效的文档可见性", 400)
+
     filename = upload_file.filename or ""
+    if not filename:
+        raise ApiError("文件名为空，请重新选择文件", 400)
     ext = os.path.splitext(filename)[1].lower()
     if ext not in cfg["ALLOWED_EXTENSIONS"]:
         raise ApiError(f"不支持的文件类型：仅支持 {', '.join(sorted(cfg['ALLOWED_EXTENSIONS']))}", 400)
 
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO documents (kb_id, filename, file_path, file_type, status) VALUES (?,?,?,?,'processing')",
-        (kb_id, filename, "", ext.lstrip(".")),
+        """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
+           VALUES (?,?,?,?,?,'processing')""",
+        (kb_id, filename, "", ext.lstrip("."), visibility),
     )
     doc_id = cur.lastrowid
     conn.commit()
 
-    # 落盘：UPLOAD_DIR/<知识库名>/<uuid>_<filename>，一个知识库对应一个文件夹
+    # 落盘：UPLOAD_DIR/<知识库名>/公开|私有/<uuid>_<filename>
     from utils.file_utils import safe_folder_name
 
-    kb_dir = os.path.join(cfg["UPLOAD_DIR"], safe_folder_name(kb["name"], str(kb_id)))
+    kb_folder = safe_folder_name(kb["name"], str(kb_id))
+    sub_dir = _visibility_dir(visibility)
+    kb_dir = os.path.join(cfg["UPLOAD_DIR"], kb_folder, sub_dir)
     os.makedirs(kb_dir, exist_ok=True)
     safe_name = f"{uuid.uuid4().hex[:12]}_{os.path.basename(filename)}"
-    rel_path = os.path.join(safe_folder_name(kb["name"], str(kb_id)), safe_name)
+    rel_path = os.path.join(kb_folder, sub_dir, safe_name)
     abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
     upload_file.save(abs_path)
 
@@ -150,12 +204,18 @@ def add_document(user: dict, kb_id: int, upload_file) -> dict:
 
     from services.doc_pipeline import process_document
 
-    return process_document(doc_id, kb_id, abs_path, filename)
+    try:
+        return process_document(doc_id, kb_id, abs_path, filename, visibility)
+    except Exception as e:  # noqa: BLE001
+        # 向量化/文本抽取失败：保留文档行与文件，置 failed 并返回详细信息
+        row = dict(conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone())
+        row["error"] = f"文档处理失败：{str(e)[:300]}"
+        return row
 
 
 def delete_document(user: dict, kb_id: int, doc_id: int) -> None:
     kb = get_kb(user, kb_id)
-    if not _can_write_kb(user, kb):
+    if not can_upload_doc(user, kb):
         raise ApiError("无权删除该知识库中的文档", 403)
     conn = get_conn()
     row = conn.execute("SELECT * FROM documents WHERE id=? AND kb_id=?", (doc_id, kb_id)).fetchone()
@@ -186,7 +246,8 @@ def search_kb(user: dict, kb_id: int, query: str, k: int = 5) -> list[dict]:
     from flask import current_app
     from services.retriever import retrieve
 
-    hits = retrieve(current_app.config, kb_id, query, top_k=k)
+    allow_private = can_view_private_docs(user)
+    hits = retrieve(current_app.config, kb_id, query, top_k=k, allow_private=allow_private)
     return [
         {
             "text": h.text,

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS documents (
   filename    TEXT NOT NULL,
   file_path   TEXT NOT NULL,               -- UPLOAD_DIR 下的相对路径
   file_type   TEXT NOT NULL,               -- txt | md | pdf | docx | pptx
+  visibility  TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','private')),
   chunk_count INTEGER NOT NULL DEFAULT 0,
   status      TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','ready','failed')),
   error       TEXT,

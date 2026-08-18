@@ -7,7 +7,8 @@ from utils.file_utils import extract_text
 from utils.text_utils import chunk_text
 
 
-def process_document(doc_id: int, kb_id: int, file_path: str, filename: str) -> dict:
+def process_document(doc_id: int, kb_id: int, file_path: str, filename: str,
+                     visibility: str = "public") -> dict:
     """处理单个文档，返回更新后的文档行。失败时置 status='failed' 并记录错误。"""
     cfg = current_app.config
     conn = get_conn()
@@ -27,7 +28,8 @@ def process_document(doc_id: int, kb_id: int, file_path: str, filename: str) -> 
 
         ids = [f"{doc_id}:{i}" for i in range(len(chunks))]
         metadatas = [
-            {"doc_id": doc_id, "kb_id": kb_id, "chunk_index": i, "filename": filename}
+            {"doc_id": doc_id, "kb_id": kb_id, "chunk_index": i,
+             "filename": filename, "visibility": visibility}
             for i in range(len(chunks))
         ]
         store = get_vector_store(cfg)

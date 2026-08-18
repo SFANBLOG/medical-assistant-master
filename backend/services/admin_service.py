@@ -77,12 +77,12 @@ def stats() -> dict:
 
     kb_count = count("SELECT COUNT(*) FROM knowledge_bases")
     doc_count = count("SELECT COUNT(*) FROM documents")
-    chunk_count = count("SELECT COALESCE(SUM(chunk_count),0) FROM documents")
+    chunk_count = int(count("SELECT COALESCE(SUM(chunk_count),0) FROM documents"))
     conv_count = count("SELECT COUNT(*) FROM conversations")
     msg_count = count("SELECT COUNT(*) FROM messages")
     user_count = count("SELECT COUNT(*) FROM users")
     hosp_count = count("SELECT COUNT(*) FROM hospitalizations")
-    bill_total = count("SELECT COALESCE(SUM(amount),0) FROM bills")
+    bill_total = float(count("SELECT COALESCE(SUM(amount),0) FROM bills"))
     role_breakdown = [
         dict(r)
         for r in conn.execute("SELECT role, COUNT(*) AS count FROM users GROUP BY role").fetchall()

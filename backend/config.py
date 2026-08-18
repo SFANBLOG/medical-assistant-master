@@ -20,10 +20,16 @@ class Config:
     JWT_ALGO = "HS256"
     JWT_EXPIRES_HOURS = int(os.environ.get("JWT_EXPIRES_HOURS", "24"))
 
-    # ---- 路径 ----
+    # ---- 数据库（默认 MySQL，可设 DB_TYPE=sqlite 使用本地 SQLite 兜底）----
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
     DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(DATA_DIR, "medical-assistant-master.db"))
+    DATABASE_NAME = os.environ.get("DATABASE_NAME", "medical-assistant-master")
+    DB_TYPE = os.environ.get("DB_TYPE", "mysql").lower()
+    MYSQL_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
+    MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
+    MYSQL_USER = os.environ.get("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "123456")
     UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(DATA_DIR, "uploads"))
     CHROMA_DIR = os.environ.get("CHROMA_DIR", os.path.join(DATA_DIR, "chroma"))
 

@@ -16,6 +16,7 @@ import type {
   Schedule,
   SearchHit,
   User,
+  Visibility,
 } from '../types'
 
 export const authApi = {
@@ -40,9 +41,10 @@ export const kbApi = {
   remove: (kbId: number) => client.delete(`/kb/${kbId}`).then((r) => r.data),
   documents: (kbId: number) =>
     client.get<{ items: DocumentItem[] }>(`/kb/${kbId}/documents`).then((r) => r.data.items),
-  uploadDoc: (kbId: number, file: File) => {
+  uploadDoc: (kbId: number, file: File, visibility?: Visibility) => {
     const form = new FormData()
     form.append('file', file)
+    if (visibility) form.append('visibility', visibility)
     return client.post<DocumentItem>(`/kb/${kbId}/documents`, form).then((r) => r.data)
   },
   deleteDoc: (kbId: number, docId: number) =>
@@ -73,7 +75,9 @@ export const patientApi = {
   bills: (params?: { category?: string; status?: string }) =>
     client.get<{ items: Bill[] }>('/patient/bills', { params }).then((r) => r.data.items),
   doctors: () =>
-    client.get<{ items: { id: number; username: string; display_name: string }[] }>('/patient/doctors').then((r) => r.data.items),
+    client
+      .get<{ items: { id: number; username: string; display_name: string }[] }>('/patient/doctors')
+      .then((r) => r.data.items),
   appointments: () =>
     client.get<{ items: Appointment[] }>('/patient/appointments').then((r) => r.data.items),
   createAppointment: (data: {
@@ -89,11 +93,17 @@ export const patientApi = {
 
 export const doctorApi = {
   patients: (params?: { q?: string; page?: number; page_size?: number }) =>
-    client.get<{ total: number; items: PatientSummary[] }>('/doctor/patients', { params }).then((r) => r.data),
+    client
+      .get<{ total: number; items: PatientSummary[] }>('/doctor/patients', { params })
+      .then((r) => r.data),
   patientHospitalizations: (patientId: number) =>
-    client.get<{ items: Hospitalization[] }>(`/doctor/patients/${patientId}/hospitalizations`).then((r) => r.data.items),
+    client
+      .get<{ items: Hospitalization[] }>(`/doctor/patients/${patientId}/hospitalizations`)
+      .then((r) => r.data.items),
   hospitalizations: (params?: { status?: string; q?: string }) =>
-    client.get<{ items: Hospitalization[] }>('/doctor/hospitalizations', { params }).then((r) => r.data.items),
+    client
+      .get<{ items: Hospitalization[] }>('/doctor/hospitalizations', { params })
+      .then((r) => r.data.items),
   createHospitalization: (data: {
     patient_id: number
     department: string
@@ -102,15 +112,19 @@ export const doctorApi = {
     ward?: string
     bed_no?: string
   }) => client.post<Hospitalization>('/doctor/hospitalizations', data).then((r) => r.data),
-  updateHospitalization: (id: number, data: { status?: string; discharge_date?: string; diagnosis?: string; total_cost?: number }) =>
-    client.put<Hospitalization>(`/doctor/hospitalizations/${id}`, data).then((r) => r.data),
+  updateHospitalization: (
+    id: number,
+    data: { status?: string; discharge_date?: string; diagnosis?: string; total_cost?: number },
+  ) => client.put<Hospitalization>(`/doctor/hospitalizations/${id}`, data).then((r) => r.data),
 }
 
 export const nurseApi = {
   patients: (q?: string) =>
     client.get<{ items: PatientSummary[] }>('/nurse/patients', { params: { q } }).then((r) => r.data.items),
   nursingRecords: (patientId?: number) =>
-    client.get<{ items: NursingRecord[] }>('/nurse/nursing-records', { params: { patient_id: patientId } }).then((r) => r.data.items),
+    client
+      .get<{ items: NursingRecord[] }>('/nurse/nursing-records', { params: { patient_id: patientId } })
+      .then((r) => r.data.items),
   createNursingRecord: (data: { patient_id: number; content: string; record_type?: string }) =>
     client.post<NursingRecord>('/nurse/nursing-records', data).then((r) => r.data),
 }

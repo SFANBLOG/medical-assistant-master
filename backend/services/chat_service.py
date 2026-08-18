@@ -1,13 +1,14 @@
 """咨询服务：编排 RAG 检索 -> 大模型流式生成 -> 持久化，输出 SSE。"""
 import json
 import uuid
+from datetime import datetime
 from typing import Iterator
 
 from flask import current_app, Response
 
 from extensions import get_llm
 from models.db import get_conn
-from services.kb_service import get_kb, can_view_kb
+from services.kb_service import get_kb, can_view_kb, can_view_private_docs
 from services.retriever import retrieve, build_context, build_citations
 from utils.errors import ApiError
 
@@ -69,6 +70,9 @@ def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> R
     if not can_view_kb(user, kb):
         raise ApiError("无权访问该知识库", 403)
 
+    # 患者/群众/护士：仅检索公开文档；医生/管理员：可检索私有文档
+    allow_private = can_view_private_docs(user)
+
     # 请求期：建会话、存用户消息、检索
     cid = _ensure_conversation(user["id"], conversation_id, kb_id, question)
     conn = get_conn()
@@ -78,7 +82,7 @@ def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> R
     )
     conn.commit()
 
-    hits = retrieve(cfg, kb_id, question, top_k=cfg["TOP_K"])
+    hits = retrieve(cfg, kb_id, question, top_k=cfg["TOP_K"], allow_private=allow_private)
     context = build_context(hits)
     citations = build_citations(hits)
     llm = get_llm(cfg)
@@ -88,11 +92,19 @@ def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> R
     ]
     # 生成器在应用上下文之外运行（werkzeug/gunicorn 均为流式迭代），
     # 所有依赖必须在此处捕获，不能在生成器内访问 current_app。
-    db_path = cfg["DATABASE_PATH"]
+    db_cfg = {
+        "DB_TYPE": cfg["DB_TYPE"],
+        "DATABASE_PATH": cfg["DATABASE_PATH"],
+        "DATABASE_NAME": cfg["DATABASE_NAME"],
+        "MYSQL_HOST": cfg["MYSQL_HOST"],
+        "MYSQL_PORT": cfg["MYSQL_PORT"],
+        "MYSQL_USER": cfg["MYSQL_USER"],
+        "MYSQL_PASSWORD": cfg["MYSQL_PASSWORD"],
+    }
     from models.db import connect
 
     def generate() -> Iterator[str]:
-        sconn = connect(db_path)
+        sconn = connect(db_cfg)
         try:
             yield _sse({"type": "meta", "mode": "online" if llm.is_available() else "offline",
                         "kbs": [{"id": kb_id, "name": kb["name"]}]})
@@ -124,8 +136,8 @@ def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> R
                      c["source_text"], c["title"], c["similarity"]),
                 )
             sconn.execute(
-                "UPDATE conversations SET updated_at=datetime('now','localtime') WHERE id=?",
-                (cid,),
+                "UPDATE conversations SET updated_at=? WHERE id=?",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), cid),
             )
             sconn.commit()
             yield _sse({"type": "done", "conversation_id": cid, "message_id": message_id,
