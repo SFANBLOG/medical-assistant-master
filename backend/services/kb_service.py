@@ -124,7 +124,7 @@ def delete_kb(user: dict, kb_id: int) -> None:
     kb = get_kb(user, kb_id)
     if not can_delete_kb(user, kb):
         raise ApiError("无权删除该知识库", 403)
-    # 删除 Chroma 集合
+    # 删除向量库集合（Milvus / NumpyStore）
     from extensions import get_vector_store
     from flask import current_app
 

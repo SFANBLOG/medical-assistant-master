@@ -1,4 +1,4 @@
-"""文档入库流水线：抽取文本 -> 切分 -> 向量化 -> 写入 Chroma。"""
+"""文档入库流水线：抽取文本 -> 切分 -> 向量化 -> 写入向量库（Milvus / NumpyStore 兜底）。"""
 from flask import current_app
 
 from extensions import get_vector_store, get_llm

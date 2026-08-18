@@ -7,11 +7,15 @@
 """
 import hashlib
 import json
+import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Iterator
 
 import numpy as np
 import requests
+
+logger = logging.getLogger(__name__)
 
 # 注意：必须用项目自带的分词函数（utils.text_utils.tokenize），
 # 而不是 Python 标准库的 tokenize 模块，否则 hash_embed 会调用错误的签名。
@@ -28,8 +32,8 @@ class LLMProvider(ABC):
         """按 token 流式返回回答增量。"""
 
     @abstractmethod
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        """一次调用返回 N 条向量。"""
+    def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        """一次调用返回 N 条向量。query=True 表示输入为检索提问（部分模型需指令前缀）。"""
 
 
 class OpenAICompatLLM(LLMProvider):
@@ -42,15 +46,32 @@ class OpenAICompatLLM(LLMProvider):
         self.timeout = 120
 
         self._local_embedder = None
-        # 判断是否为本地 sentence-transformers 模型；加载失败不阻断，后面会走哈希兜底
-        local_prefix = ("all-", "bge-")
-        if self.embed_model and self.embed_model.startswith(local_prefix):
+        # 检索提问的指令前缀：bge-*-zh 系列官方推荐在 query 侧加前缀以提升召回，
+        # 文档侧不加；noinstruct 变体（bge-large-zh-noinstruct）无需前缀。
+        self.query_prefix = ""
+        if self.embed_model and "-zh" in self.embed_model and "bge" in self.embed_model \
+                and "noinstruct" not in self.embed_model:
+            self.query_prefix = "为这个句子生成表示以用于检索相关文章："
+        # 判断是否为本地 sentence-transformers 模型（本地目录 或 bge-*/all-* 模型 id）；
+        # 加载失败不阻断，后面会走哈希兜底
+        local_prefix = ("all-", "bge-", "BAAI/bge-", "sentence-transformers/")
+        is_local_dir = self.embed_model and os.path.isdir(self.embed_model)
+        if self.embed_model and (is_local_dir or self.embed_model.startswith(local_prefix)):
             try:
                 from sentence_transformers import SentenceTransformer
 
                 self._local_embedder = SentenceTransformer(self.embed_model)
-            except Exception:  # noqa: BLE001 模型下载失败/未安装均降级
+                # 兼容新旧 API：sentence-transformers 5.x 将方法改名为 get_embedding_dimension
+                _dim_fn = getattr(self._local_embedder, "get_embedding_dimension", None) \
+                    or self._local_embedder.get_sentence_embedding_dimension
+                logger.info(f"本地向量模型加载成功：{self.embed_model} "
+                            f"dim={_dim_fn()}")
+            except Exception as e:  # noqa: BLE001 模型下载失败/未安装均降级
                 self._local_embedder = None
+                logger.warning(
+                    f"本地向量模型 {self.embed_model!r} 加载失败，将使用哈希向量兜底"
+                    f"（语义检索效果差，建议安装 sentence-transformers 并确认模型名）。错误：{e}"
+                )
 
     def is_available(self) -> bool:
         return True
@@ -84,11 +105,15 @@ class OpenAICompatLLM(LLMProvider):
                 if content:
                     yield content
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        # 检索提问侧：bge-large-zh 等模型需要指令前缀（文档侧不加）
+        inputs = texts
+        if query and self.query_prefix:
+            inputs = [self.query_prefix + t for t in texts]
         # 1) 本地 Embedding 模型（all-*/bge-*）优先；失败则降级哈希向量
         if self._local_embedder is not None:
             try:
-                return self._local_embedder.encode(texts).tolist()
+                return _normalize_rows(self._local_embedder.encode(inputs).tolist())
             except Exception:  # noqa: BLE001
                 self._local_embedder = None
         # 2) 未配置向量模型 -> 使用确定性哈希向量（离线可用，索引/查询维度一致）
@@ -98,13 +123,14 @@ class OpenAICompatLLM(LLMProvider):
         #    都回退到哈希向量，保证上传、检索链路始终可用。
         try:
             url = f"{self.base_url}/embeddings"
-            payload = {"model": self.embed_model, "input": texts}
+            payload = {"model": self.embed_model, "input": inputs}
             resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
             resp.raise_for_status()
             body = resp.json()
             ranked = sorted(body["data"], key=lambda item: item["index"])
-            return [item["embedding"] for item in ranked]
-        except Exception:  # noqa: BLE001
+            return _normalize_rows([item["embedding"] for item in ranked])
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"embedding 接口调用失败，回退哈希向量：{e}")
             return [hash_embed(t, self.dim) for t in texts]
 
 
@@ -119,7 +145,7 @@ class OfflineFallbackLLM(LLMProvider):
         # 不直接使用；离线模式由 chat_service 合成回答。
         return iter(())
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
         return [hash_embed(t, self.dim) for t in texts]
 
 
@@ -133,3 +159,12 @@ def hash_embed(text: str, dim: int = 256) -> list[float]:
     if n > 0:
         vec = vec / n
     return vec.tolist()
+
+
+def _normalize_rows(rows: list[list[float]]) -> list[list[float]]:
+    """对一批向量做 L2 归一化，保证 cosine 相似度可直接比较（= 点积）。"""
+    arr = np.asarray(rows, dtype=np.float32)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    arr = arr / norms
+    return arr.tolist()

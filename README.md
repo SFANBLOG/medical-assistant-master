@@ -30,7 +30,7 @@
 | --- | --- |
 | 前端 | **Vue 3**、TypeScript、Vite、**Element Plus**、Vue Router、Pinia、ECharts、Axios（单页应用） |
 | 后端 | Python、Flask、Flask-CORS（SSE 流式）、Blueprint + Service 分层 |
-| 数据存储 | **MySQL 8**（数据库 `medical-assistant-master`，自动建库建表）、本地文件存储、ChromaDB / NumpyStore 向量库 |
+| 数据存储 | **MySQL 8**（数据库 `medical-assistant-master`，自动建库建表）、本地文件存储、**Milvus 向量库**（NumpyStore 纯 Python 兜底） |
 | AI/RAG | OpenAI 兼容接口（DeepSeek 等）、文档切分、向量检索、关键词重排、上下文构建、SSE 流式响应、内置哈希向量兜底 |
 | 部署 | Docker Compose（MySQL + 前端 Nginx + 后端 gunicorn） |
 
@@ -45,7 +45,7 @@ flowchart LR
     API --> KB["知识库服务（公开/私有权限）"]
     API --> Med["患者健康档案 / 医护业务"]
     Chat --> Retriever["检索与上下文构建"]
-    Retriever --> Vector["ChromaDB / Numpy 向量库"]
+    Retriever --> Vector["Milvus / Numpy 向量库"]
     Retriever --> MySQL["MySQL：medical-assistant-master"]
     Chat --> LLM["大语言模型接口（在线/离线兜底）"]
     KB --> Files["uploads/<知识库>/公开|私有/ 文档"]
@@ -66,7 +66,7 @@ medical_assistant-master/
 │   ├── data/
 │   │   ├── kb_docs_src/          # 知识库文档源：<知识库>/公开/ 与 <知识库>/私有/
 │   │   ├── uploads/<知识库>/公开|私有/   # 落盘的文档目录
-│   │   └── chroma/               # 向量库（NumpyStore / ChromaDB）
+│   │   └── vectors/              # NumpyStore 兜底向量库（Milvus 模式不使用）
 │   ├── app.py          # Flask 入口（自动建库建表 + 播种演示数据）
 │   ├── seed.py         # 幂等数据播种（5 角色 + 12 知识库 + 每表 ≥50 条）
 │   └── requirements.txt
@@ -77,7 +77,7 @@ medical_assistant-master/
 │   └── src/types/      # 角色与业务类型
 ├── docs/images/        # 运行截图
 ├── scripts/            # 截图脚本等工具
-├── docker-compose.yml  # MySQL + 后端 + 前端
+├── docker-compose.yml  # Milvus(etcd+minio) + MySQL + 后端 + 前端
 └── README.md
 ```
 
@@ -386,12 +386,14 @@ docker compose up --build
 | publicdemo | 群众 | 仅查询公开知识库/公开文档，健康资讯、就诊指南、预约挂号 |
 | admindemo | 管理员 | 系统管理、全部知识库与文档、全系统看板 |
 
-## 模型配置
+## 向量库与模型配置
 
 后端通过 `backend/` 或项目根目录下的 `.env` 加载配置（`python-dotenv`，不覆盖已存在的环境变量）：
 
+- **向量库（Milvus）**：知识库文档切分后写入 **Milvus**（集合 `medical_chunks`，`kb_id` 分区键 + cosine 度量，HNSW 索引）。`MILVUS_ENABLE=1` 时优先连接 `MILVUS_HOST:MILVUS_PORT`（默认 `127.0.0.1:19530`）；Milvus 未启动时自动降级为纯 Python 的 NumpyStore（同样返回 cosine 相似度），保证应用始终可用。
+- **向量化模型**：推荐 `OPENAI_EMBED_MODEL=data/models/bge-base-zh-v1.5`（BAAI 官方中文语义检索模型，维度 768）。首次使用前运行 `cd backend && python download_model.py`，从 ModelScope 快速下载到 `backend/data/models/`（约 400MB；ModelScope 不可用时自动回退 HuggingFace hf-mirror）。也可以直接填 HF 模型 id `BAAI/bge-base-zh-v1.5` 由程序自动下载。留空则使用内置确定性哈希向量（离线可用、无需下载，但语义检索效果差、匹配分数低）。
 - **聊天**：填写 OpenAI 兼容接口即可在线问答（DeepSeek / OpenAI / 通义千问 / Ollama 均可）；
-- **向量化**：默认使用内置确定性哈希向量（离线可用、无需下载模型，维度 `EMBED_DIM`）；如需真实语义向量，可设置 `OPENAI_EMBED_MODEL=all-MiniLM-L6-v2` 等本地模型并将 `EMBED_DIM` 调整为 384。
+- **相似度**：检索返回 **cosine 相似度**（0~1，与查询文本一致的片段 ≈ 1.0）；`MIN_SIMILARITY` 为召回下限，低于该值的片段视为无关，不进入回答上下文。
 - **兜底**：未配置密钥或大模型调用失败时，系统自动降级为基于知识库检索的离线合成回答，全链路始终可用。
 
 ```bash
@@ -402,11 +404,24 @@ MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=123456
+
+# 向量库（Milvus）
+MILVUS_ENABLE=1
+MILVUS_HOST=127.0.0.1
+MILVUS_PORT=19530
+
+# 聊天 / 向量化
 OPENAI_BASE_URL=https://api.deepseek.com/v1
 OPENAI_API_KEY=sk-xxx
 OPENAI_CHAT_MODEL=deepseek-chat
-OPENAI_EMBED_MODEL=          # 留空使用内置哈希向量
-EMBED_DIM=256
+OPENAI_EMBED_MODEL=data/models/bge-base-zh-v1.5   # 或 BAAI/bge-base-zh-v1.5
+
+# RAG 参数
+EMBED_DIM=768
+CHUNK_SIZE=500
+CHUNK_OVERLAP=80
+TOP_K=5
+MIN_SIMILARITY=0.30
 ```
 
 ## 开源注意事项

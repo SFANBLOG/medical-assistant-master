@@ -167,7 +167,7 @@ def init_schema(cfg) -> None:
         return
     os.makedirs(cfg["DATA_DIR"], exist_ok=True)
     os.makedirs(cfg["UPLOAD_DIR"], exist_ok=True)
-    os.makedirs(cfg["CHROMA_DIR"], exist_ok=True)
+    os.makedirs(cfg["VECTOR_DIR"], exist_ok=True)
     with connect(cfg) as conn:
         with open(SCHEMA_PATH, encoding="utf-8") as f:
             conn.executescript(f.read())

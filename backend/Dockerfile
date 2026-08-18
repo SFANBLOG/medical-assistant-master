@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \
     PIP_NO_CACHE_DIR=1
 
-# Chroma 的 ONNX 运行时在 slim 镜像上需要 libgomp1
+# torch / numpy 的 OpenMP 运行时需要 libgomp1（Milvus 客户端不依赖；本地向量模型依赖）
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
