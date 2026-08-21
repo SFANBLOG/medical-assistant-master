@@ -9,7 +9,8 @@
           <el-tag v-else-if="streaming" type="success" size="small" style="margin-left: 8px">生成中</el-tag>
         </span>
         <span style="display: flex; gap: 8px">
-          <el-select v-model="kbId" placeholder="选择知识库" style="width: 240px" :loading="loading">
+          <el-select v-model="kbId" placeholder="选择知识库" style="width: 260px" :loading="loading">
+            <el-option :value="0" label="全部知识库（自动匹配）" />
             <el-option v-for="k in kbs" :key="k.id" :value="k.id" :label="`${k.name}${k.visibility === 'public' ? '（公开）' : '（私有）'}`" />
           </el-select>
           <el-button type="primary" plain @click="newChat"><el-icon><Plus /></el-icon>&nbsp;新建会话</el-button>
@@ -55,7 +56,7 @@ interface DisplayMessage {
 
 const route = useRoute()
 const kbs = ref<KnowledgeBase[]>([])
-const kbId = ref<number | null>(null)
+const kbId = ref<number>(0)
 const messages = ref<DisplayMessage[]>([])
 const streaming = ref<DisplayMessage | null>(null)
 const input = ref('')
@@ -69,7 +70,6 @@ onMounted(() => {
     .list()
     .then((items) => {
       kbs.value = items
-      if (items.length) kbId.value = kbId.value ?? items[0].id
     })
     .catch((e) => ElMessage.error((e as Error).message))
     .finally(() => (loading.value = false))
@@ -81,7 +81,7 @@ onMounted(() => {
       .detail(convFromUrl)
       .then((detail) => {
         conversationId.value = detail.conversation.id
-        kbId.value = detail.conversation.kb_id
+        kbId.value = detail.conversation.kb_id ?? 0
         messages.value = detail.messages.map((m: Message) => ({
           id: m.id,
           role: m.role,
@@ -110,10 +110,6 @@ function onKeydown(e: KeyboardEvent) {
 async function send() {
   const question = input.value.trim()
   if (!question || streaming.value) return
-  if (!kbId.value) {
-    ElMessage.warning('请先选择知识库')
-    return
-  }
   input.value = ''
   messages.value.push({ id: `u-${Date.now()}`, role: 'user', content: question, citations: [] })
   const placeholder: DisplayMessage = { id: 'streaming', role: 'assistant', content: '', citations: [] }

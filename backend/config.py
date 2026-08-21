@@ -114,13 +114,19 @@ class Config:
         print(f"[config] 警告：EMBED_DIM={_EMBED_DIM} 与向量模型 {OPENAI_EMBED_MODEL!r} "
               f"实际维度 {_DETECTED_DIM} 不一致，已自动修正为 {_DETECTED_DIM}")
     EMBED_DIM = _DETECTED_DIM
-    # CHUNK_SIZE 按字符数切分：bge-* 最长 512 token，中文约 1.2 字/token，
-    # 取 500 字符保证切片不超长被截断；CHUNK_OVERLAP 相邻切片重叠，保留上下文连贯。
-    CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))
-    CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "80"))
-    TOP_K = int(os.environ.get("TOP_K", "5"))
+    # CHUNK_SIZE 按字符数切分：bge-* 最长 512 token，中文约 1 字/token，
+    # 取 380 字符既避免超长截断，又保留较细粒度的语义片段，召回更精准；
+    # CHUNK_OVERLAP 相邻切片重叠，保留上下文连贯。
+    CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "380"))
+    CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "60"))
+    TOP_K = int(os.environ.get("TOP_K", "6"))
     # 召回相似度下限（cosine 相似度，0~1）：低于该值视为无关文档，不进入回答上下文。
     MIN_SIMILARITY = float(os.environ.get("MIN_SIMILARITY", "0.30"))
+    # 检索提问指令前缀：bge-*-zh-v1.5 默认不加（官方推荐，实测分数更高）。
+    # 若使用 bge-large-zh（非 v1.5）可设为：为这个句子生成表示以用于检索相关文章：
+    QUERY_PREFIX = os.environ.get("QUERY_PREFIX", "")
+    # 检索提问是否启用关键词扩展变体（多向量 max-pool）
+    QUERY_EXPAND = os.environ.get("QUERY_EXPAND", "1")
 
     # ---- 上传 ----
     ALLOWED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", ".pptx"}

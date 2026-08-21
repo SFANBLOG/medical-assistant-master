@@ -13,12 +13,12 @@ def ask():
     data = request.get_json(silent=True) or {}
     kb_id = data.get("kb_id")
     question = data.get("question", "")
-    if not kb_id:
-        raise ApiError("请选择知识库", 400)
+    # kb_id 为空或 0 时自动检索全部可见知识库
+    kb_id = int(kb_id) if kb_id not in (None, "", 0) else None
     return chat_service.ask(
         g.user,
         conversation_id=data.get("conversation_id"),
-        kb_id=int(kb_id),
+        kb_id=kb_id,
         question=question,
     )
 

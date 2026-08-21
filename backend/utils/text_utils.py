@@ -7,7 +7,7 @@ import re
 
 # 分词正则：拉丁字母/数字/下划线 + 连续汉字
 WORD_RE = re.compile(r"[a-zA-Z0-9_]+")
-CJK_RE = re.compile(r"[一-鿿]+")
+CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
 SENT_END_RE = re.compile(r"[。！？!?；;]")
 PARA_SPLIT_RE = re.compile(r"\n\s*\n")
 LINE_SPLIT_RE = re.compile(r"\n")
@@ -35,6 +35,72 @@ def keyword_overlap(question: str, text: str) -> float:
     t_tokens = set(tokenize(text))
     hit = sum(1 for t in q_tokens if t in t_tokens)
     return hit / len(q_tokens)
+
+
+def char_overlap(question: str, text: str) -> float:
+    """字符级覆盖度：提问中的有效中文字符有多少出现在候选文本中（0~1）。
+
+    中文问答中提问往往只包含几个关键实体（疾病名、症状、身体部位），
+    字符级覆盖对「问题 -> 参考片段」的匹配比二元组分词更稳定，
+    即使文档措辞不同，只要实体一致即可得到较高分值。
+    """
+    q_chars = {ch for ch in question if "\u4e00" <= ch <= "\u9fff"}
+    if not q_chars:
+        return 0.0
+    t_chars = set(text)
+    hit = sum(1 for ch in q_chars if ch in t_chars)
+    return hit / len(q_chars)
+
+
+# 医疗常见同义词/别称归一化：提问与文档用词不一致时统一到主词。
+SYNONYMS = {
+    "发烧": "发热",
+    "中风": "脑卒中",
+    "脑中风": "脑卒中",
+    "脚气": "足癣",
+    "青春痘": "痤疮",
+    "牛皮癣": "银屑病",
+    "上感": "上呼吸道感染",
+    "肠胃炎": "胃肠炎",
+    "高血压病": "高血压",
+    "高血脂": "血脂异常",
+}
+
+
+def normalize_synonyms(text: str) -> str:
+    """把常见同义词替换为主词，提升提问与文档的匹配度。"""
+    for k, v in SYNONYMS.items():
+        if k in text:
+            text = text.replace(k, v)
+    return text
+
+
+def extract_disease(question: str, known_names: list[str]) -> str:
+    """从提问中提取最长的已知疾病名（用于标题级强匹配）。
+
+    known_names 传知识库文档标题（疾病名）列表即可；找不到返回空串。
+    兼容带括号的标题（如“银屑病（牛皮癣）”）——括号内的别名也参与匹配。
+    """
+    candidates: set[str] = set()
+    for name in known_names:
+        name = name.strip().strip("#").strip()
+        if not name or len(name) < 2:
+            continue
+        candidates.add(name)
+        # “银屑病（牛皮癣）”“慢性阻塞性肺疾病(COPD)” -> 主名 + 括号内别名
+        inner = re.findall(r"[（(]([^（）()]+)[）)]", name)
+        for part in inner:
+            part = part.strip()
+            if len(part) >= 2:
+                candidates.add(part)
+        base = re.split(r"[（(]", name)[0].strip()
+        if len(base) >= 2:
+            candidates.add(base)
+    best = ""
+    for name in candidates:
+        if name in question and len(name) > len(best):
+            best = name
+    return best
 
 
 def _split_sentences(paragraph: str) -> list[str]:

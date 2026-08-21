@@ -144,6 +144,31 @@ class NumpyStore:
         logger.debug(f"query kb_id={kb_id}, top_k={top_k}, valid hit count={len(hits)}")
         return hits
 
+    def get_chunks(self, kb_id: int, doc_ids, filters: dict | None = None) -> list[dict]:
+        """按 doc_id 列表取回指定文档的全部切片（不计算相似度）。"""
+        if not doc_ids:
+            return []
+        with self._lock:
+            arr, meta = self._load(kb_id)
+        idset = set(doc_ids)
+        out = []
+        for e in meta:
+            md = e.get("metadata") or {}
+            if md.get("doc_id") not in idset:
+                continue
+            if filters and any(md.get(k) != v for k, v in filters.items()):
+                continue
+            out.append(
+                {
+                    "id": e["id"],
+                    "doc_id": md.get("doc_id"),
+                    "chunk_index": md.get("chunk_index"),
+                    "filename": md.get("filename", ""),
+                    "text": e["document"],
+                }
+            )
+        return out
+
     def delete_doc(self, kb_id: int, doc_id: int) -> None:
         with self._lock:
             arr, meta = self._load(kb_id)
@@ -166,7 +191,7 @@ class NumpyStore:
 
 
 class MilvusStore:
-    """Milvus 向量库实现（自定义集合设计）。
+    """Milvus 向量库实现（MilvusClient新版接口，无ORM弃用警告）。
 
     集合设计（单集合 + kb_id 分区键，便于按知识库高效隔离与过滤）：
       id          VARCHAR(64)  主键           = "<doc_id>:<chunk_index>"
@@ -192,76 +217,65 @@ class MilvusStore:
         self.collection_name = collection or self.COLLECTION_NAME
         self.min_similarity = min_similarity
         self._lock = threading.Lock()
-        self._col = None
-        self._connected = False
+        self._client = None
         self._connect()
 
-    # ---- 连接与集合管理 ----
     def _connect(self):
-        if self._connected:
+        if self._client is not None:
             return
         try:
-            from pymilvus import Collection, connections  # 延迟导入，保证 pymilvus 可选
-        except ImportError as e:  # pragma: no cover
+            from pymilvus import MilvusClient
+        except ImportError as e:
             raise MilvusUnavailable(f"未安装 pymilvus: {e}") from e
         try:
-            connections.connect(
-                alias="default", host=self.host, port=self.port, db_name=self.db_name
-            )
-            self._connected = True
-        except Exception as e:  # noqa: BLE001 Milvus 未启动 / 网络不可达
+            self._client = MilvusClient(uri=f"http://{self.host}:{self.port}", db_name=self.db_name)
+        except Exception as e:
             raise MilvusUnavailable(f"无法连接 Milvus({self.host}:{self.port}): {e}") from e
 
     def _ensure_collection(self):
-        """创建（或复用）集合；校验维度一致性。"""
-        if self._col is not None:
-            return self._col
-        with self._lock:
-            from pymilvus import (Collection, CollectionSchema, DataType,
-                                  FieldSchema, utility)
+        from pymilvus import DataType
 
-            if utility.has_collection(self.collection_name, using="default"):
-                col = Collection(self.collection_name, using="default")
-                vector_field = next(
-                    (f for f in col.schema.fields if f.dtype == DataType.FLOAT_VECTOR), None
+        if self._client.has_collection(collection_name=self.collection_name):
+            coll_info = self._client.describe_collection(collection_name=self.collection_name)
+            vec_field = next(
+                (f for f in coll_info["fields"] if f["type"] == DataType.FLOAT_VECTOR), None
+            )
+            if vec_field is None or vec_field["params"].get("dim") != self.dim:
+                raise VectorStoreError(
+                    f"Milvus集合 {self.collection_name} 向量维度不匹配！"
+                    f"集合dim={vec_field['params']['dim'] if vec_field else '?'}，"
+                    f"配置EMBED_DIM={self.dim}。请先删除集合或调小 EMBED_DIM 后重新入库。"
                 )
-                if vector_field is None or vector_field.params.get("dim") != self.dim:
-                    raise VectorStoreError(
-                        f"Milvus集合 {self.collection_name} 向量维度不匹配！"
-                        f"集合dim={vector_field.params.get('dim') if vector_field else '?'}，"
-                        f"配置EMBED_DIM={self.dim}。请先删除集合或调小 EMBED_DIM 后重新入库。"
-                    )
-                try:
-                    col.load()
-                except Exception:  # noqa: BLE001 空集合可能未加载
-                    pass
-                self._col = col
-                return col
+            return
 
-            fields = [
-                FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64),
-                FieldSchema(name="kb_id", dtype=DataType.INT64, is_partition_key=True),
-                FieldSchema(name="doc_id", dtype=DataType.INT64),
-                FieldSchema(name="chunk_index", dtype=DataType.INT64),
-                FieldSchema(name="filename", dtype=DataType.VARCHAR, max_length=512),
-                FieldSchema(name="visibility", dtype=DataType.VARCHAR, max_length=16),
-                FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
-            ]
-            schema = CollectionSchema(
-                fields, description="医智助手知识库向量片段（kb_id 分区键 + cosine 度量）"
-            )
-            col = Collection(self.collection_name, schema=schema, using="default",
-                             consistency_level="Session")
-            col.create_index(
-                "vector",
-                {"index_type": "HNSW", "metric_type": "COSINE",
-                 "params": {"M": 16, "efConstruction": 200}},
-            )
-            col.load()
-            self._col = col
-            logger.info(f"MilvusStore 创建集合 {self.collection_name} (dim={self.dim})")
-            return col
+        schema = self._client.create_schema(
+            auto_id=False,
+            enable_dynamic_field=False
+        )
+        schema.add_field(field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=64)
+        schema.add_field(field_name="kb_id", datatype=DataType.INT64, is_partition_key=True)
+        schema.add_field(field_name="doc_id", datatype=DataType.INT64)
+        schema.add_field(field_name="chunk_index", datatype=DataType.INT64)
+        schema.add_field(field_name="filename", datatype=DataType.VARCHAR, max_length=512)
+        schema.add_field(field_name="visibility", datatype=DataType.VARCHAR, max_length=16)
+        schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=65535)
+        schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=self.dim)
+
+        index_params = self._client.prepare_index_params()
+        index_params.add_index(
+            field_name="vector",
+            index_type="HNSW",
+            metric_type="COSINE",
+            params={"M": 16, "efConstruction": 200}
+        )
+
+        self._client.create_collection(
+            collection_name=self.collection_name,
+            schema=schema,
+            index_params=index_params,
+            consistency_level="Session"
+        )
+        logger.info(f"MilvusStore 创建集合 {self.collection_name} (dim={self.dim})")
 
     def _expr(self, kb_id: int, filters: dict | None) -> str:
         expr = f"kb_id == {int(kb_id)}"
@@ -270,9 +284,8 @@ class MilvusStore:
                 expr += f" and {k} == '{v}'"
         return expr
 
-    # ---- 统一接口 ----
     def upsert(self, kb_id: int, ids, embeddings, documents, metadatas) -> None:
-        col = self._ensure_collection()
+        self._ensure_collection()
         rows = []
         for i, cid in enumerate(ids):
             vec = list(embeddings[i])
@@ -295,40 +308,39 @@ class MilvusStore:
                 }
             )
         with self._lock:
-            col.upsert(rows)
-            col.flush()
+            self._client.upsert(collection_name=self.collection_name, data=rows)
+            self._client.flush(collection_name=self.collection_name)
         logger.debug(f"Milvus upsert kb_id={kb_id}, rows={len(rows)}")
 
     def query(self, kb_id: int, embedding: list[float], top_k: int = 5,
               filters: dict | None = None) -> list[dict]:
-        col = self._ensure_collection()
+        self._ensure_collection()
         vec = list(embedding)
         if len(vec) != self.dim:
             raise VectorStoreError(
                 f"Milvus query向量维度错误！collection dim={self.dim}, query vec dim={len(vec)}"
             )
-        # 过采样以保证标量过滤（如 visibility）与相似度阈值过滤后仍有足够结果
         search_limit = max(top_k * 4, top_k + 8)
-        res = col.search(
+        res = self._client.search(
+            collection_name=self.collection_name,
             data=[vec],
             anns_field="vector",
-            param={"metric_type": "COSINE", "params": {"ef": 128}},
+            filter=self._expr(kb_id, filters),
+            search_params={"metric_type": "COSINE", "params": {"ef": 128}},
             limit=search_limit,
-            expr=self._expr(kb_id, filters),
             output_fields=["id", "doc_id", "chunk_index", "filename", "visibility", "text"],
         )
         hits = []
         for hit in res[0]:
             if len(hits) >= top_k:
                 break
-            distance = float(hit.distance)
-            # 相似度过低视为无关（与 NumpyStore 行为一致）
+            distance = float(hit["distance"])
             if (1.0 - distance) < self.min_similarity:
                 continue
-            entity = hit.entity
+            entity = hit["entity"]
             hits.append(
                 {
-                    "id": hit.id,
+                    "id": hit["id"],
                     "text": entity.get("text", ""),
                     "metadata": {
                         "doc_id": entity.get("doc_id"),
@@ -343,13 +355,45 @@ class MilvusStore:
         return hits
 
     def delete_doc(self, kb_id: int, doc_id: int) -> None:
-        col = self._ensure_collection()
+        self._ensure_collection()
         with self._lock:
-            col.delete(expr=f"kb_id == {int(kb_id)} and doc_id == {int(doc_id)}")
-            col.flush()
+            self._client.delete(
+                collection_name=self.collection_name,
+                filter_expr=f"kb_id == {int(kb_id)} and doc_id == {int(doc_id)}"
+            )
+            self._client.flush(collection_name=self.collection_name)
+
+    def get_chunks(self, kb_id: int, doc_ids, filters: dict | None = None) -> list[dict]:
+        """按 doc_id 列表取回指定文档的全部切片（不计算相似度）。"""
+        if not doc_ids:
+            return []
+        self._ensure_collection()
+        doc_list = ",".join(str(int(d)) for d in doc_ids)
+        expr = f"doc_id in [{doc_list}]"
+        if filters:
+            for k, v in filters.items():
+                expr += f" and {k} == '{v}'"
+        rows = self._client.query(
+            collection_name=self.collection_name,
+            filter=expr,
+            output_fields=["id", "doc_id", "chunk_index", "filename", "text"],
+        )
+        return [
+            {
+                "id": r["id"],
+                "doc_id": r["doc_id"],
+                "chunk_index": r["chunk_index"],
+                "filename": r.get("filename", ""),
+                "text": r.get("text", ""),
+            }
+            for r in rows
+        ]
 
     def delete_collection(self, kb_id: int) -> None:
-        col = self._ensure_collection()
+        self._ensure_collection()
         with self._lock:
-            col.delete(expr=f"kb_id == {int(kb_id)}")
-            col.flush()
+            self._client.delete(
+                collection_name=self.collection_name,
+                filter_expr=f"kb_id == {int(kb_id)}"
+            )
+            self._client.flush(collection_name=self.collection_name)

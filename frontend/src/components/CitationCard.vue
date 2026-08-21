@@ -8,7 +8,7 @@
     </template>
     <el-tag :type="tagType" style="cursor: pointer">
       [{{ index + 1 }}] {{ citation.title }}
-      <span style="opacity: 0.7; margin-left: 6px">相似度 {{ citation.similarity.toFixed(2) }}</span>
+      <span style="opacity: 0.7; margin-left: 6px">相似度 {{ (citation.similarity * 100).toFixed(1) }}%</span>
     </el-tag>
   </el-tooltip>
 </template>

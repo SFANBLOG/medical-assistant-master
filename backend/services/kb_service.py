@@ -43,6 +43,48 @@ def can_view_private_docs(user: dict) -> bool:
     return user["role"] in ("doctor", "admin")
 
 
+def list_visible_kb_ids(user: dict) -> list[int]:
+    """当前用户可见且至少含一个可见文档的知识库 id 列表（用于跨知识库检索）。
+
+    仅返回有文档的知识库，避免对空知识库做无意义的向量检索。
+    """
+    conn = get_conn()
+    if user["role"] == "admin":
+        kb_where, kb_params = "1=1", []
+    else:
+        kb_where, kb_params = "(k.visibility = 'public' OR k.owner_id = ?)", [user["id"]]
+    if can_view_private_docs(user):
+        doc_where, doc_params = "1=1", []
+    else:
+        doc_where, doc_params = "d.visibility = 'public'", []
+    rows = conn.execute(
+        f"""SELECT DISTINCT k.id FROM knowledge_bases k
+            JOIN documents d ON d.kb_id = k.id
+            WHERE {kb_where} AND {doc_where}
+            ORDER BY k.id""",
+        kb_params + doc_params,
+    ).fetchall()
+    return [r["id"] for r in rows]
+
+
+def list_known_doc_names(user: dict) -> list[str]:
+    """当前用户可见文档的标题列表（疾病名），供提问中的疾病名提取使用。"""
+    conn = get_conn()
+    if can_view_private_docs(user):
+        where, params = "1=1", []
+    else:
+        where, params = "visibility = 'public'", []
+    rows = conn.execute(
+        f"SELECT filename FROM documents WHERE {where}", params
+    ).fetchall()
+    names = set()
+    for r in rows:
+        name = os.path.splitext(r["filename"])[0].strip()
+        if name:
+            names.add(name)
+    return sorted(names)
+
+
 def can_upload_doc(user: dict, kb: dict) -> bool:
     """上传文档权限：管理员任意；医生可上传到公开知识库或自己的私有知识库。"""
     if user["role"] == "admin":
@@ -247,7 +289,12 @@ def search_kb(user: dict, kb_id: int, query: str, k: int = 5) -> list[dict]:
     from services.retriever import retrieve
 
     allow_private = can_view_private_docs(user)
-    hits = retrieve(current_app.config, kb_id, query, top_k=k, allow_private=allow_private)
+    kb_ids = list_visible_kb_ids(user)
+    hits = retrieve(
+        current_app.config, kb_ids, query, top_k=k,
+        allow_private=allow_private, bias_kb_id=kb_id,
+        known_names=list_known_doc_names(user),
+    )
     return [
         {
             "text": h.text,

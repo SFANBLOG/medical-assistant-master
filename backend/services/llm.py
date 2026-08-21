@@ -46,12 +46,13 @@ class OpenAICompatLLM(LLMProvider):
         self.timeout = 120
 
         self._local_embedder = None
-        # 检索提问的指令前缀：bge-*-zh 系列官方推荐在 query 侧加前缀以提升召回，
-        # 文档侧不加；noinstruct 变体（bge-large-zh-noinstruct）无需前缀。
-        self.query_prefix = ""
-        if self.embed_model and "-zh" in self.embed_model and "bge" in self.embed_model \
-                and "noinstruct" not in self.embed_model:
-            self.query_prefix = "为这个句子生成表示以用于检索相关文章："
+        # 检索提问的指令前缀（query instruction）。
+        # ⚠️ bge-*-zh-v1.5 官方说明：v1.5 系列已优化「不加指令」的检索能力，
+        # 不加前缀召回更稳定、相似度更高（实测 bge-base-zh-v1.5 无前缀 0.75 vs 有前缀 0.63）。
+        # 因此默认关闭前缀，可通过 .env 的 QUERY_PREFIX 显式开启（如 bge-large-zh 老版本）。
+        self.query_prefix = cfg.get("QUERY_PREFIX", "") or ""
+        # 检索提问的扩展变体：把原始提问再拼上关键词，用于多变体 max-pool 召回
+        self.query_expand = cfg.get("QUERY_EXPAND", "1") not in ("0", "false", "False")
         # 判断是否为本地 sentence-transformers 模型（本地目录 或 bge-*/all-* 模型 id）；
         # 加载失败不阻断，后面会走哈希兜底
         local_prefix = ("all-", "bge-", "BAAI/bge-", "sentence-transformers/")
@@ -116,8 +117,25 @@ class OpenAICompatLLM(LLMProvider):
             self.embed_model,
         )
 
+    def embed_query_variants(self, question: str) -> list[list[float]]:
+        """检索提问的多个向量变体（原始 / 指令前缀 / 关键词扩展）。
+
+        返回与 texts 一一对应的向量列表，供召回时对每个候选片段取最大相似度
+        （max-pool over variants），显著提升正确文档的召回分数。
+        """
+        variants: list[str] = [question]
+        if self.query_prefix:
+            variants.append(self.query_prefix + question)
+        if self.query_expand:
+            from utils.text_utils import tokenize
+
+            toks = tokenize(question)
+            if toks:
+                variants.append(" ".join(toks[:40]))
+        return self.embed(variants, query=False)
+
     def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
-        # 检索提问侧：bge-large-zh 等模型需要指令前缀（文档侧不加）
+        # 检索提问侧：仅在显式开启指令前缀时追加（bge-*-zh-v1.5 默认不加）
         inputs = texts
         if query and self.query_prefix:
             inputs = [self.query_prefix + t for t in texts]
@@ -150,6 +168,8 @@ class OpenAICompatLLM(LLMProvider):
 class OfflineFallbackLLM(LLMProvider):
     def __init__(self, cfg):
         self.dim = cfg["EMBED_DIM"]
+        self.query_prefix = cfg.get("QUERY_PREFIX", "") or ""
+        self.query_expand = cfg.get("QUERY_EXPAND", "1") not in ("0", "false", "False")
 
     def is_available(self) -> bool:
         return False
@@ -160,6 +180,17 @@ class OfflineFallbackLLM(LLMProvider):
 
     def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
         return [hash_embed(t, self.dim) for t in texts]
+
+    def embed_query_variants(self, question: str) -> list[list[float]]:
+        """离线兜底：原始提问 + 关键词扩展两个变体（哈希向量）。"""
+        variants: list[str] = [question]
+        if self.query_expand:
+            from utils.text_utils import tokenize
+
+            toks = tokenize(question)
+            if toks:
+                variants.append(" ".join(toks[:40]))
+        return self.embed(variants, query=False)
 
 
 def hash_embed(text: str, dim: int = 256) -> list[float]:

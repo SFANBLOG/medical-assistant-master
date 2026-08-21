@@ -8,7 +8,8 @@ from flask import current_app, Response
 
 from extensions import get_llm
 from models.db import get_conn
-from services.kb_service import get_kb, can_view_kb, can_view_private_docs
+from services.kb_service import (get_kb, can_view_kb, can_view_private_docs,
+                                 list_visible_kb_ids, list_known_doc_names)
 from services.retriever import retrieve, build_context, build_citations
 from utils.errors import ApiError
 
@@ -43,7 +44,7 @@ def _synthesize_fallback(question: str, hits) -> str:
     return FALLBACK_ANSWER_TMPL.format(bullets=bullets or "（无）", summary=summary[:3000])
 
 
-def _ensure_conversation(user_id: int, conversation_id: str | None, kb_id: int, question: str) -> str:
+def _ensure_conversation(user_id: int, conversation_id: str | None, kb_id: int | None, question: str) -> str:
     conn = get_conn()
     if conversation_id:
         row = conn.execute(
@@ -61,20 +62,28 @@ def _ensure_conversation(user_id: int, conversation_id: str | None, kb_id: int, 
     return cid
 
 
-def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> Response:
+def ask(user: dict, conversation_id: str | None, kb_id: int | None, question: str) -> Response:
     cfg = current_app.config
     if not question or not question.strip():
         raise ApiError("问题不能为空", 400)
     question = question.strip()
-    kb = get_kb(user, kb_id)  # 校验可见性
-    if not can_view_kb(user, kb):
-        raise ApiError("无权访问该知识库", 403)
+
+    # kb_id=0 或未传 -> 自动检索全部可见知识库（解决「选错知识库答不对」的问题）
+    if kb_id in (None, 0):
+        kb = {"id": None, "name": "全部知识库（自动匹配）", "visibility": "public", "owner_id": None}
+    else:
+        kb = get_kb(user, kb_id)  # 校验可见性
+        if not can_view_kb(user, kb):
+            raise ApiError("无权访问该知识库", 403)
 
     # 患者/群众/护士：仅检索公开文档；医生/管理员：可检索私有文档
     allow_private = can_view_private_docs(user)
+    # 跨知识库检索：当前用户可见的全部知识库（选中的库作为并列时的轻微加权）
+    kb_ids = list_visible_kb_ids(user)
+    known_names = list_known_doc_names(user)
 
     # 请求期：建会话、存用户消息、检索
-    cid = _ensure_conversation(user["id"], conversation_id, kb_id, question)
+    cid = _ensure_conversation(user["id"], conversation_id, kb["id"], question)
     conn = get_conn()
     conn.execute(
         "INSERT INTO messages (conversation_id, role, content) VALUES (?, 'user', ?)",
@@ -82,7 +91,9 @@ def ask(user: dict, conversation_id: str | None, kb_id: int, question: str) -> R
     )
     conn.commit()
 
-    hits = retrieve(cfg, kb_id, question, top_k=cfg["TOP_K"], allow_private=allow_private)
+    hits = retrieve(cfg, kb_ids, question, top_k=cfg["TOP_K"],
+                    allow_private=allow_private, bias_kb_id=kb["id"],
+                    known_names=known_names)
     context = build_context(hits)
     citations = build_citations(hits)
     llm = get_llm(cfg)
