@@ -24,6 +24,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="C:\Users\23187\Desktop\AI大模型-高新杰\integrated_qa_system\mysql_qa\data\JP学科知识问答.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="C:\Users\23187\Desktop\AI大模型-高新杰\integrated_qa_system\mysql_qa\data\JP学科知识问答旧.csv">
           <value>
             <Attribute>

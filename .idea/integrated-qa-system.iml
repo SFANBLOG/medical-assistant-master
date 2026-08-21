@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
-    <content url="file://$USER_HOME$/Desktop/AI大模型-高新杰/integrated_qa_system">
-      <sourceFolder url="file://$USER_HOME$/Desktop/AI大模型-高新杰/integrated_qa_system/src" isTestSource="false" />
+    <content url="file://$MODULE_DIR$/../../AI大模型-高新杰/integrated_qa_system">
+      <sourceFolder url="file://$MODULE_DIR$/../../AI大模型-高新杰/integrated_qa_system/src" isTestSource="false" />
     </content>
     <orderEntry type="jdk" jdkName="C:\huanjing\python\3.11.9\python.exe" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

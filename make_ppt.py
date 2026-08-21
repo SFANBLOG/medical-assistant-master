@@ -3,35 +3,37 @@
 运行：python make_ppt.py   输出：医智助手-项目答辩.pptx
 """
 import os
+
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.oxml.ns import qn
+from pptx.util import Inches, Pt
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 IMG = os.path.join(ROOT, 'docs', 'images')
 OUT = os.path.join(ROOT, '医智助手-项目答辩.pptx')
 
 # ---------------- 调色板 ----------------
-TEAL      = RGBColor(0x0F, 0x76, 0x6E)   # 主色 深青
+TEAL = RGBColor(0x0F, 0x76, 0x6E)  # 主色 深青
 DARK_TEAL = RGBColor(0x13, 0x4E, 0x4A)
-DEEP_TEAL = RGBColor(0x0B, 0x3D, 0x39)   # 封面底
-LIGHT_TEAL= RGBColor(0xE6, 0xF6, 0xF1)
+DEEP_TEAL = RGBColor(0x0B, 0x3D, 0x39)  # 封面底
+LIGHT_TEAL = RGBColor(0xE6, 0xF6, 0xF1)
 PALE_TEAL = RGBColor(0xCC, 0xF1, 0xE8)
-MINT      = RGBColor(0x99, 0xF6, 0xE4)
-BLUE      = RGBColor(0x25, 0x63, 0xEB)
-LIGHT_BLUE= RGBColor(0xEA, 0xF2, 0xFE)
-AMBER     = RGBColor(0xD9, 0x77, 0x06)
+MINT = RGBColor(0x99, 0xF6, 0xE4)
+BLUE = RGBColor(0x25, 0x63, 0xEB)
+LIGHT_BLUE = RGBColor(0xEA, 0xF2, 0xFE)
+AMBER = RGBColor(0xD9, 0x77, 0x06)
 LIGHT_AMBER = RGBColor(0xFE, 0xF3, 0xC7)
-DARK      = RGBColor(0x1E, 0x29, 0x3B)   # 主文字
-GRAY      = RGBColor(0x64, 0x74, 0x8B)
-LIGHT     = RGBColor(0xF1, 0xF5, 0xF9)
-WHITE     = RGBColor(0xFF, 0xFF, 0xFF)
-BORDER    = RGBColor(0xCB, 0xD5, 0xE1)
+DARK = RGBColor(0x1E, 0x29, 0x3B)  # 主文字
+GRAY = RGBColor(0x64, 0x74, 0x8B)
+LIGHT = RGBColor(0xF1, 0xF5, 0xF9)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+BORDER = RGBColor(0xCB, 0xD5, 0xE1)
 
 FONT = '微软雅黑'
+
 
 # ---------------- 基础工具 ----------------
 def _set_run(run, size=16, bold=False, color=DARK, font=FONT, italic=False):
@@ -47,6 +49,7 @@ def _set_run(run, size=16, bold=False, color=DARK, font=FONT, italic=False):
         ea = rPr.makeelement(qn('a:ea'), {})
         rPr.append(ea)
     ea.set('typeface', font)
+
 
 def add_text(slide, x, y, w, h, text, size=16, color=DARK, bold=False,
              align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, spacing=1.0,
@@ -68,6 +71,7 @@ def add_text(slide, x, y, w, h, text, size=16, color=DARK, bold=False,
         _set_run(r, size, bold, color)
     return tb
 
+
 def add_para(tf, runs, align=PP_ALIGN.LEFT, spacing=1.0, before=0, after=0,
              bullet_size=15, first=False):
     """runs: list of (text, size, bold, color)"""
@@ -81,6 +85,7 @@ def add_para(tf, runs, align=PP_ALIGN.LEFT, spacing=1.0, before=0, after=0,
         r.text = t
         _set_run(r, s, b, c)
     return p
+
 
 def add_bullets(slide, x, y, w, h, items, size=15, gap=8, color=DARK,
                 marker='●', mcolor=TEAL, spacing=1.0):
@@ -99,12 +104,21 @@ def add_bullets(slide, x, y, w, h, items, size=15, gap=8, color=DARK,
         p.space_after = Pt(gap)
         p.level = lvl
         if lvl == 0:
-            r1 = p.add_run(); r1.text = marker + ' '; _set_run(r1, size, True, mcolor)
-            r2 = p.add_run(); r2.text = text; _set_run(r2, size, False, color)
+            r1 = p.add_run();
+            r1.text = marker + ' ';
+            _set_run(r1, size, True, mcolor)
+            r2 = p.add_run();
+            r2.text = text;
+            _set_run(r2, size, False, color)
         else:
-            r1 = p.add_run(); r1.text = '    └ '; _set_run(r1, size - 1, False, GRAY)
-            r2 = p.add_run(); r2.text = text; _set_run(r2, size - 1, False, GRAY)
+            r1 = p.add_run();
+            r1.text = '    └ ';
+            _set_run(r1, size - 1, False, GRAY)
+            r2 = p.add_run();
+            r2.text = text;
+            _set_run(r2, size - 1, False, GRAY)
     return tb
+
 
 def add_rect(slide, x, y, w, h, fill=None, line=None, lw=1.0,
              shape=MSO_SHAPE.ROUNDED_RECTANGLE, radius=0.08):
@@ -127,6 +141,7 @@ def add_rect(slide, x, y, w, h, fill=None, line=None, lw=1.0,
     sp.shadow.inherit = False
     return sp
 
+
 def add_chip(slide, x, y, w, h, text, fill, tcolor=WHITE, size=12, bold=True,
              line=None, radius=0.5, shape=MSO_SHAPE.ROUNDED_RECTANGLE):
     sp = add_rect(slide, x, y, w, h, fill=fill, line=line, shape=shape, radius=radius)
@@ -138,9 +153,11 @@ def add_chip(slide, x, y, w, h, text, fill, tcolor=WHITE, size=12, bold=True,
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     p.line_spacing = 1.0
-    r = p.add_run(); r.text = text
+    r = p.add_run();
+    r.text = text
     _set_run(r, size, bold, tcolor)
     return sp
+
 
 def add_pic(slide, fname, x, y, w, border=True):
     """按 1440x900 比例(1.6)放图片"""
@@ -151,6 +168,7 @@ def add_pic(slide, fname, x, y, w, border=True):
         add_rect(slide, x, y, w, h, fill=None, line=BORDER, lw=1.0,
                  shape=MSO_SHAPE.RECTANGLE, radius=0)
     return pic
+
 
 def content_header(slide, title, tag, page):
     # 顶部色条
@@ -171,13 +189,16 @@ def content_header(slide, title, tag, page):
     add_text(slide, 11.9, 7.06, 0.9, 0.3, '%02d' % page, size=10, bold=True,
              color=GRAY, align=PP_ALIGN.RIGHT)
 
+
 def new_slide():
     return prs.slides.add_slide(prs.slide_layouts[6])
+
 
 def bg_slide(color):
     s = new_slide()
     add_rect(s, 0, 0, 13.333, 7.5, fill=color, shape=MSO_SHAPE.RECTANGLE)
     return s
+
 
 # ---------------- 封面 ----------------
 def slide_cover():
@@ -208,6 +229,7 @@ def slide_cover():
     add_text(s, 1.0, 6.55, 11.33, 0.4, '2026 年 8 月', size=13,
              color=RGBColor(0x9E, 0xC9, 0xC4), align=PP_ALIGN.CENTER)
 
+
 # ---------------- 目录 ----------------
 TOC = [
     ('01', '项目背景与需求分析', '背景意义 · 系统简介 · 角色权限 · 功能/非功能需求'),
@@ -216,6 +238,7 @@ TOC = [
     ('04', '系统运行与测试', '运行效果 · 测试用例'),
     ('05', '项目总结', '亮点与难点 · 总结展望'),
 ]
+
 
 def slide_toc(page):
     s = new_slide()
@@ -240,11 +263,13 @@ def slide_toc(page):
     footer(s, page, '目录')
     return s
 
+
 def footer(s, page, tag=''):
     add_text(s, 0.55, 7.06, 6.0, 0.3, '医智助手 · 医疗知识库智能问答系统',
              size=9, color=GRAY)
     add_text(s, 11.9, 7.06, 0.9, 0.3, '%02d' % page, size=10, bold=True,
              color=GRAY, align=PP_ALIGN.RIGHT)
+
 
 # ---------------- 章节页 ----------------
 def slide_section(num, title, en, items):
@@ -268,6 +293,7 @@ def slide_section(num, title, en, items):
         y += 0.88
     return s
 
+
 # ---------------- 内容页数据 ----------------
 def bullets_box(slide, x, y, w, items, title=None, size=14.5, gap=7,
                 title_color=DARK_TEAL):
@@ -282,6 +308,7 @@ def bullets_box(slide, x, y, w, items, title=None, size=14.5, gap=7,
     add_bullets(slide, x + 0.28, cy, w - 0.55, 3.0, items, size=size, gap=gap)
     return cy
 
+
 # =========================================================
 # 开始构建
 # =========================================================
@@ -291,10 +318,12 @@ prs.slide_height = Inches(7.5)
 
 PAGE = 0
 
+
 def nxt():
     global PAGE
     PAGE += 1
     return PAGE
+
 
 # ---- 1 封面 ----
 slide_cover()
@@ -307,6 +336,7 @@ slide_toc(nxt())
 slide_section('01', '项目背景与需求分析', 'BACKGROUND & REQUIREMENTS',
               ['项目背景与意义', '系统简介', '用户角色与权限分析', '功能性需求', '非功能性需求'])
 nxt()
+
 
 # ---- 项目背景与意义 ----
 def slide_04():
@@ -336,7 +366,10 @@ def slide_04():
         ('面向公众的医学知识科普与辅助理解平台', 0),
     ], size=14, gap=10)
     return s
+
+
 slide_04()
+
 
 # ---- 系统简介 ----
 def slide_05():
@@ -374,7 +407,10 @@ def slide_05():
         ('知识库管理：上传、切分、向量化、检索一站式', 0),
     ], size=13.5, gap=10)
     return s
+
+
 slide_05()
+
 
 # ---- 用户角色与权限分析 ----
 def slide_06():
@@ -407,7 +443,8 @@ def slide_06():
             run.text = val
             if r == 0:
                 _set_run(run, 13, True, WHITE)
-                cell.fill.solid(); cell.fill.fore_color.rgb = TEAL
+                cell.fill.solid();
+                cell.fill.fore_color.rgb = TEAL
             else:
                 _set_run(run, 12, c == 0, DARK)
                 cell.fill.solid()
@@ -419,7 +456,10 @@ def slide_06():
         ('医生可上传私有文档并仅供本人可见；管理员拥有全部权限，实现细粒度 RBAC', 0),
     ], size=12.5, gap=8)
     return s
+
+
 slide_06()
+
 
 # ---- 功能性需求 ----
 def slide_07():
@@ -444,7 +484,10 @@ def slide_07():
         add_text(s, 3.75, y + 0.1, 8.85, 0.55, desc, size=12, color=DARK)
         y += 0.78
     return s
+
+
 slide_07()
+
 
 # ---- 非功能性需求 ----
 def slide_08():
@@ -470,12 +513,15 @@ def slide_08():
         ('可扩展性：向量库可切换（Milvus / NumpyStore）、模型可更换（DeepSeek / OpenAI / 通义 / Ollama）', 0),
     ], size=12.5, gap=6)
     return s
+
+
 slide_08()
 
 # ============ 章节 2 ============
 slide_section('02', '系统总体设计', 'SYSTEM DESIGN',
               ['系统总体架构', '技术栈选型', '数据库设计', '权限与安全设计', '向量检索与 RAG 设计'])
 nxt()
+
 
 def add_arrow(s, x, y, w, direction='down', color=TEAL):
     if direction == 'down':
@@ -486,6 +532,7 @@ def add_arrow(s, x, y, w, direction='down', color=TEAL):
         add_rect(s, x, y - 0.09, w, 0.18, fill=color, shape=MSO_SHAPE.RECTANGLE)
         add_rect(s, x + w - 0.12, y - 0.14, 0.16, 0.28, fill=color,
                  shape=MSO_SHAPE.ISOSCELES_TRIANGLE)
+
 
 # ---- 系统总体架构 ----
 def slide_10():
@@ -541,7 +588,10 @@ def slide_10():
         ('RAG 全链路：权限过滤 → 向量召回 → 关键词重排 → 上下文构建 → 大模型生成 → 引用来源', 0),
     ], size=11.5, gap=5)
     return s
+
+
 slide_10()
+
 
 # ---- 技术栈 ----
 def slide_11():
@@ -571,10 +621,12 @@ def slide_11():
             tf = cell.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
-            run = p.add_run(); run.text = val
+            run = p.add_run();
+            run.text = val
             if r == 0:
                 _set_run(run, 13, True, WHITE)
-                cell.fill.solid(); cell.fill.fore_color.rgb = TEAL
+                cell.fill.solid();
+                cell.fill.fore_color.rgb = TEAL
             else:
                 _set_run(run, 12, c == 0, DARK)
                 cell.fill.solid()
@@ -584,7 +636,10 @@ def slide_11():
         ('全链路可降级：无 LLM 密钥、无 Milvus 也能运行完整 RAG 流程', 0),
     ], size=12.5, gap=6)
     return s
+
+
 slide_11()
+
 
 # ---- 数据库设计 ----
 def slide_12():
@@ -626,7 +681,10 @@ def slide_12():
              'visibility 字段实现公开/私有双层权限；回答引用独立建表实现"可追溯"',
              size=12.5, color=DARK_TEAL, spacing=1.2)
     return s
+
+
 slide_12()
+
 
 # ---- 关键数据表 ----
 def slide_13():
@@ -677,7 +735,10 @@ def slide_13():
             add_text(s, cx + 4.0, fy, 1.85, 0.3, fdesc, size=9.5, color=GRAY)
             fy += 0.34
     return s
+
+
 slide_13()
+
 
 # ---- 权限与安全 ----
 def slide_14():
@@ -736,17 +797,22 @@ def slide_14():
             tf.word_wrap = True
             p = tf.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER if c else PP_ALIGN.LEFT
-            run = p.add_run(); run.text = val
+            run = p.add_run();
+            run.text = val
             if r == 0:
                 _set_run(run, 11.5, True, WHITE)
-                cell.fill.solid(); cell.fill.fore_color.rgb = TEAL
+                cell.fill.solid();
+                cell.fill.fore_color.rgb = TEAL
             else:
                 green = val == '✓'
                 _set_run(run, 11.5, c == 0, RGBColor(0x0B, 0x8A, 0x55) if green else DARK)
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = WHITE if r % 2 else LIGHT_TEAL
     return s
+
+
 slide_14()
+
 
 # ---- 向量检索与 RAG 设计 ----
 def slide_15():
@@ -778,7 +844,10 @@ def slide_15():
         ('修复旧实现 1/(1+d) 压分导致的"匹配上但分数仅 0.3~0.5"问题；低于 MIN_SIMILARITY 的片段视为无关不进入上下文', 0),
     ], size=12.5, gap=9)
     return s
+
+
 slide_15()
+
 
 # ---- RAG 问答全流程 ----
 def slide_16():
@@ -827,12 +896,15 @@ def slide_16():
              '知识库切换：可在多个疾病知识库间选择；咨询历史按会话保存，回答引用可逐条追溯',
              size=12.5, color=DARK)
     return s
+
+
 slide_16()
 
 # ============ 章节 3 ============
 slide_section('03', '系统详细实现', 'IMPLEMENTATION',
               ['后端架构实现', '前端架构实现', '智能咨询功能', '知识库管理功能', '核心业务功能'])
 nxt()
+
 
 # ---- 后端 ----
 def slide_18():
@@ -884,7 +956,10 @@ def slide_18():
              '状态机：processing → ready / failed（失败返回具体原因，如文件格式不支持）', size=11.5,
              color=GRAY)
     return s
+
+
 slide_18()
+
 
 # ---- 前端 ----
 def slide_19():
@@ -915,7 +990,10 @@ def slide_19():
         ('ECharts 数据看板：管理员全系统统计、患者个人健康数据可视化', 0),
     ], size=12.5, gap=6)
     return s
+
+
 slide_19()
+
 
 # ---- 智能咨询 ----
 def slide_20():
@@ -940,7 +1018,10 @@ def slide_20():
              '调用失败时降级为离线合成回答。',
              size=12, color=DARK, spacing=1.2)
     return s
+
+
 slide_20()
+
 
 # ---- 知识库管理 ----
 def slide_21():
@@ -967,7 +1048,10 @@ def slide_21():
             add_arrow(s, fx + 1.66, 6.0, 0.34, 'right', color=TEAL)
         fx += 2.0
     return s
+
+
 slide_21()
+
 
 # ---- 核心业务 ----
 def slide_22():
@@ -999,12 +1083,15 @@ def slide_22():
              '管理员：用户与全系统数据一屏掌握。业务数据贯穿 11 张表，形成完整闭环。',
              size=12.5, color=DARK, spacing=1.2)
     return s
+
+
 slide_22()
 
 # ============ 章节 4 ============
 slide_section('04', '系统运行与测试', 'RUNNING & TESTING',
               ['系统运行效果', '功能测试用例'])
 nxt()
+
 
 # ---- 运行效果 ----
 def slide_24():
@@ -1027,7 +1114,10 @@ def slide_24():
         add_text(s, x, y + w / 1.6 + 0.07, w, 0.3, cap, size=10.5, color=GRAY,
                  align=PP_ALIGN.CENTER)
     return s
+
+
 slide_24()
+
 
 # ---- 测试 ----
 def slide_25():
@@ -1058,10 +1148,12 @@ def slide_25():
             tf = cell.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
-            run = p.add_run(); run.text = val
+            run = p.add_run();
+            run.text = val
             if r == 0:
                 _set_run(run, 12.5, True, WHITE)
-                cell.fill.solid(); cell.fill.fore_color.rgb = TEAL
+                cell.fill.solid();
+                cell.fill.fore_color.rgb = TEAL
             else:
                 _set_run(run, 11.5, c == 0, DARK)
                 cell.fill.solid()
@@ -1072,12 +1164,15 @@ def slide_25():
         ('运行截图由 scripts/screenshot.mjs（puppeteer-core + 本机 Chrome）自动生成，可回归验证 UI', 0),
     ], size=11.5, gap=6)
     return s
+
+
 slide_25()
 
 # ============ 章节 5 ============
 slide_section('05', '项目总结', 'SUMMARY',
               ['项目亮点与难点', '总结与展望'])
 nxt()
+
 
 # ---- 亮点与难点 ----
 def slide_27():
@@ -1112,7 +1207,10 @@ def slide_27():
         ('自动建库建表 + 幂等播种，五角色一键演示；Docker Compose 一键部署（Milvus+MySQL+前后端）', 0),
     ], size=12.5, gap=6)
     return s
+
+
 slide_27()
+
 
 # ---- 总结与展望 ----
 def slide_28():
@@ -1138,7 +1236,10 @@ def slide_28():
     ]
     add_bullets(s, 0.92, 4.8, 11.6, 1.8, items, size=13, gap=9)
     return s
+
+
 slide_28()
+
 
 # ---- 结束页 ----
 def slide_29():
@@ -1156,6 +1257,8 @@ def slide_29():
              color=RGBColor(0x9E, 0xC9, 0xC4), align=PP_ALIGN.CENTER)
     nxt()
     return s
+
+
 slide_29()
 
 prs.save(OUT)

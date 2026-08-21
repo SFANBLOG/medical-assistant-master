@@ -1,4 +1,5 @@
 """应用配置：全部通过环境变量注入，便于本地与 Docker 部署。"""
+import json
 import os
 
 # 加载项目根目录或 backend/ 下的 .env（不覆盖已存在的环境变量，Docker 注入优先）
@@ -52,19 +53,67 @@ class Config:
     # 留空 -> 内置确定性哈希向量（离线可用，维度 EMBED_DIM），但语义检索效果差。
     # 推荐 BAAI/bge-base-zh-v1.5（中文语义检索，维度 768；如需更强可换 bge-large-zh-v1.5 并设 EMBED_DIM=1024）。
     _EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "BAAI/bge-base-zh-v1.5")
-    if _EMBED_MODEL and not os.path.isabs(_EMBED_MODEL) and not _EMBED_MODEL.startswith(("http", "BAAI/", "sentence-transformers/")):
-        _candidate = os.path.join(_BASE, _EMBED_MODEL)
-        if os.path.isdir(_candidate):
-            OPENAI_EMBED_MODEL = os.path.abspath(_candidate)
-        else:
-            OPENAI_EMBED_MODEL = _EMBED_MODEL
-    else:
-        OPENAI_EMBED_MODEL = _EMBED_MODEL
+
+    @staticmethod
+    def _resolve_embed_model(name: str) -> str:
+        """把配置的向量模型解析为可直接加载的值（本地目录绝对路径 / HF 模型 id）。
+
+        关键防护：配置的本地模型路径不存在时（如手误把 bge-base 写成 bge-small），
+        不再静默回退到哈希向量导致检索分数极低，而是自动改用 data/models/ 下已有的
+        任一本地模型，并打印告警。
+        """
+        if not name or os.path.isabs(name) or name.startswith(("http", "BAAI/", "sentence-transformers/")):
+            return name
+        candidate = os.path.join(_BASE, name)
+        if os.path.isdir(candidate):
+            return os.path.abspath(candidate)
+        models_dir = os.path.join(_BASE, "data", "models")
+        if os.path.isdir(models_dir):
+            found = [
+                d for d in sorted(os.listdir(models_dir))
+                if os.path.isdir(os.path.join(models_dir, d))
+            ]
+            if found:
+                print(f"[config] 警告：配置的向量模型 {name!r} 不存在，"
+                      f"自动改用本地模型 {found[0]!r}（如需换模型请修正 .env 的 OPENAI_EMBED_MODEL）")
+                return os.path.abspath(os.path.join(models_dir, found[0]))
+        print(f"[config] 警告：向量模型 {name!r} 不可用（本地目录不存在且非 HF id），"
+              f"将回退哈希向量，检索相似度分数会显著偏低。")
+        return name
+
+    OPENAI_EMBED_MODEL = _resolve_embed_model(_EMBED_MODEL)
+
+    @staticmethod
+    def _detect_embed_dim(model: str, fallback: int) -> int:
+        """推断向量模型的实际维度：本地目录读 config.json 的 hidden_size，
+        知名 bge 系列按名称映射；未知则返回 fallback。"""
+        if model:
+            if os.path.isdir(model):
+                cfg_path = os.path.join(model, "config.json")
+                try:
+                    with open(cfg_path, encoding="utf-8") as f:
+                        hidden = json.load(f).get("hidden_size")
+                    if hidden:
+                        return int(hidden)
+                except Exception:  # noqa: BLE001 读不到配置就按名称推断
+                    pass
+            low = model.lower()
+            for key, dim in (("bge-large", 1024), ("bge-base", 768), ("bge-small", 512), ("bge-m3", 1024)):
+                if key in low:
+                    return dim
+        return fallback
 
     # ---- RAG 参数 ----
     # EMBED_DIM 必须与向量模型输出维度一致：BAAI/bge-base-zh-v1.5 = 768，
     # BAAI/bge-large-zh-v1.5 = 1024；若留空模型用哈希向量兜底，维度取本值。
-    EMBED_DIM = int(os.environ.get("EMBED_DIM", "768"))
+    # 启动时自动按模型实际维度校验并修正，避免 .env 与模型维度不一致导致
+    # 向量库维度不匹配报错或哈希向量低分检索。
+    _EMBED_DIM = int(os.environ.get("EMBED_DIM", "768"))
+    _DETECTED_DIM = _detect_embed_dim(OPENAI_EMBED_MODEL, _EMBED_DIM)
+    if _DETECTED_DIM != _EMBED_DIM:
+        print(f"[config] 警告：EMBED_DIM={_EMBED_DIM} 与向量模型 {OPENAI_EMBED_MODEL!r} "
+              f"实际维度 {_DETECTED_DIM} 不一致，已自动修正为 {_DETECTED_DIM}")
+    EMBED_DIM = _DETECTED_DIM
     # CHUNK_SIZE 按字符数切分：bge-* 最长 512 token，中文约 1.2 字/token，
     # 取 500 字符保证切片不超长被截断；CHUNK_OVERLAP 相邻切片重叠，保留上下文连贯。
     CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))

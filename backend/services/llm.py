@@ -70,7 +70,8 @@ class OpenAICompatLLM(LLMProvider):
                 self._local_embedder = None
                 logger.warning(
                     f"本地向量模型 {self.embed_model!r} 加载失败，将使用哈希向量兜底"
-                    f"（语义检索效果差，建议安装 sentence-transformers 并确认模型名）。错误：{e}"
+                    f"（语义检索效果差、匹配分数低）。请检查 .env 中 OPENAI_EMBED_MODEL "
+                    f"是否指向真实存在的模型目录，或先运行 python download_model.py。错误：{e}"
                 )
 
     def is_available(self) -> bool:
@@ -105,6 +106,16 @@ class OpenAICompatLLM(LLMProvider):
                 if content:
                     yield content
 
+    def _warn_hash_fallback(self) -> None:
+        """哈希向量兜底时发出醒目告警（避免误配置被静默吞掉导致低分检索）。"""
+        logger.warning(
+            "⚠️ 向量模型 %r 未生效（本地模型加载失败 / 未配置 / 远程 /embeddings 不可用），"
+            "已回退确定性哈希向量：语义检索相似度分数会显著偏低（约 0.3~0.5）。"
+            "请检查 .env 的 OPENAI_EMBED_MODEL 是否指向真实存在的本地模型目录"
+            "（如 data/models/bge-base-zh-v1.5），或改用提供 /embeddings 接口的 OPENAI_BASE_URL。",
+            self.embed_model,
+        )
+
     def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
         # 检索提问侧：bge-large-zh 等模型需要指令前缀（文档侧不加）
         inputs = texts
@@ -118,6 +129,7 @@ class OpenAICompatLLM(LLMProvider):
                 self._local_embedder = None
         # 2) 未配置向量模型 -> 使用确定性哈希向量（离线可用，索引/查询维度一致）
         if not self.embed_model:
+            self._warn_hash_fallback()
             return [hash_embed(t, self.dim) for t in texts]
         # 3) 远程 /embeddings 接口（OpenAI 等支持者）。任何异常（如 DeepSeek 无此接口）
         #    都回退到哈希向量，保证上传、检索链路始终可用。
@@ -130,6 +142,7 @@ class OpenAICompatLLM(LLMProvider):
             ranked = sorted(body["data"], key=lambda item: item["index"])
             return _normalize_rows([item["embedding"] for item in ranked])
         except Exception as e:  # noqa: BLE001
+            self._warn_hash_fallback()
             logger.warning(f"embedding 接口调用失败，回退哈希向量：{e}")
             return [hash_embed(t, self.dim) for t in texts]
 

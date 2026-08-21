@@ -6,6 +6,7 @@
 """
 import os
 import secrets
+
 # 生成一个安全的随机密钥
 JWT_SECRET_KEY = secrets.token_hex(32)  # 64字符的 hex 字符串
 # huggingface国内镜像
