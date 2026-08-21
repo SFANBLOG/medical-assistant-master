@@ -3,6 +3,5 @@
   <component name="DataSourcePerFileMappings">
     <file url="file://$PROJECT_DIR$/backend/app.py" value="9f9c3901-7d2e-4fe3-bb26-78306096814a" />
     <file url="file://$PROJECT_DIR$/backend/seed.py" value="9f9c3901-7d2e-4fe3-bb26-78306096814a" />
-    <file url="file://$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/backend/sql/init_mysql.sql" value="6cf44982-4f57-4fe6-9382-02d9783d68ed" />
   </component>
 </project>

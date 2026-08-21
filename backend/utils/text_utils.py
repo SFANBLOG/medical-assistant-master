@@ -75,27 +75,61 @@ def normalize_synonyms(text: str) -> str:
     return text
 
 
+# 文档标题的常见描述性后缀（剥离后得到疾病核心名，用于标题匹配）
+DESC_SUFFIXES = (
+    "的急救处理", "的院前处置", "的家庭护理", "的鉴别诊断", "的规范使用",
+    "的规范治疗", "的早期筛查", "的早期信号", "的饮食管理", "的应急处理",
+    "的现场处理", "的识别与处理", "的识别", "的防控", "的预防与保健", "的预防",
+    "的处理", "的治疗", "的管理", "的诊断", "的筛查", "的护理", "的保健",
+    "的注意事项", "的防治", "的药物管理", "的分级治疗", "的解读", "的判读",
+    "的调整", "与随访", "的监测", "的规范化管理", "的适应证",
+)
+
+
+def core_disease_names(names: list[str]) -> set[str]:
+    """从文档标题集合中剥离描述性后缀、拆分并列名，得到疾病核心名集合。
+
+    例如「中暑的急救处理」->「中暑」；「感冒与流感」->「感冒」「流感」；
+    「痛风与高尿酸血症」->「痛风」「高尿酸血症」。
+    """
+    out: set[str] = set()
+    for n in names:
+        n = n.strip().strip("#").strip()
+        if not n:
+            continue
+        out.add(n)
+        base = re.split(r"[（(]", n)[0].strip()
+        # 剥离描述性后缀
+        for sfx in sorted(DESC_SUFFIXES, key=len, reverse=True):
+            if base.endswith(sfx) and len(base) - len(sfx) >= 2:
+                base = base[: -len(sfx)]
+                break
+        # 拆分并列名：A与B / A及B / A和B
+        for sep in ("与", "及", "和"):
+            if sep in base:
+                for part in base.split(sep):
+                    part = part.strip()
+                    if len(part) >= 2:
+                        out.add(part)
+        if len(base) >= 2:
+            out.add(base)
+    return out
+
+
 def extract_disease(question: str, known_names: list[str]) -> str:
     """从提问中提取最长的已知疾病名（用于标题级强匹配）。
 
     known_names 传知识库文档标题（疾病名）列表即可；找不到返回空串。
-    兼容带括号的标题（如“银屑病（牛皮癣）”）——括号内的别名也参与匹配。
+    支持剥离描述性后缀（如「中暑的急救处理」的核心名「中暑」）与括号别名。
     """
     candidates: set[str] = set()
-    for name in known_names:
-        name = name.strip().strip("#").strip()
-        if not name or len(name) < 2:
-            continue
+    for name in core_disease_names(known_names):
         candidates.add(name)
-        # “银屑病（牛皮癣）”“慢性阻塞性肺疾病(COPD)” -> 主名 + 括号内别名
-        inner = re.findall(r"[（(]([^（）()]+)[）)]", name)
-        for part in inner:
+        # “银屑病（牛皮癣）”“慢性阻塞性肺疾病(COPD)” -> 括号内别名
+        for part in re.findall(r"[（(]([^（）()]+)[）)]", name):
             part = part.strip()
             if len(part) >= 2:
                 candidates.add(part)
-        base = re.split(r"[（(]", name)[0].strip()
-        if len(base) >= 2:
-            candidates.add(base)
     best = ""
     for name in candidates:
         if name in question and len(name) > len(best):

@@ -145,14 +145,14 @@ class NumpyStore:
         return hits
 
     def get_chunks(self, kb_id: int, doc_ids, filters: dict | None = None) -> list[dict]:
-        """按 doc_id 列表取回指定文档的全部切片（不计算相似度）。"""
+        """按 doc_id 列表取回指定文档的全部切片（含向量，不重新嵌入）。"""
         if not doc_ids:
             return []
         with self._lock:
             arr, meta = self._load(kb_id)
         idset = set(doc_ids)
         out = []
-        for e in meta:
+        for i, e in enumerate(meta):
             md = e.get("metadata") or {}
             if md.get("doc_id") not in idset:
                 continue
@@ -165,8 +165,33 @@ class NumpyStore:
                     "chunk_index": md.get("chunk_index"),
                     "filename": md.get("filename", ""),
                     "text": e["document"],
+                    "vector": arr[i].tolist(),
                 }
             )
+        return out
+
+    def get_all_chunks(self, kb_ids, filters: dict | None = None) -> list[dict]:
+        """取回指定知识库的全部切片（含向量，用于内容级关键词扫描 + 语义计算）。"""
+        out = []
+        filters = filters or {}
+        for kb_id in kb_ids or []:
+            with self._lock:
+                arr, meta = self._load(kb_id)
+            for i, e in enumerate(meta):
+                md = e.get("metadata") or {}
+                if filters and any(md.get(k) != v for k, v in filters.items()):
+                    continue
+                out.append(
+                    {
+                        "id": e["id"],
+                        "kb_id": kb_id,
+                        "doc_id": md.get("doc_id"),
+                        "chunk_index": md.get("chunk_index"),
+                        "filename": md.get("filename", ""),
+                        "text": e["document"],
+                        "vector": arr[i].tolist(),
+                    }
+                )
         return out
 
     def delete_doc(self, kb_id: int, doc_id: int) -> None:
@@ -364,7 +389,7 @@ class MilvusStore:
             self._client.flush(collection_name=self.collection_name)
 
     def get_chunks(self, kb_id: int, doc_ids, filters: dict | None = None) -> list[dict]:
-        """按 doc_id 列表取回指定文档的全部切片（不计算相似度）。"""
+        """按 doc_id 列表取回指定文档的全部切片（含向量，不重新嵌入）。"""
         if not doc_ids:
             return []
         self._ensure_collection()
@@ -376,7 +401,7 @@ class MilvusStore:
         rows = self._client.query(
             collection_name=self.collection_name,
             filter=expr,
-            output_fields=["id", "doc_id", "chunk_index", "filename", "text"],
+            output_fields=["id", "doc_id", "chunk_index", "filename", "text", "vector"],
         )
         return [
             {
@@ -385,6 +410,34 @@ class MilvusStore:
                 "chunk_index": r["chunk_index"],
                 "filename": r.get("filename", ""),
                 "text": r.get("text", ""),
+                "vector": r.get("vector"),
+            }
+            for r in rows
+        ]
+
+    def get_all_chunks(self, kb_ids, filters: dict | None = None) -> list[dict]:
+        """取回指定知识库的全部切片（含向量，用于内容级关键词扫描 + 语义计算）。"""
+        if not kb_ids:
+            return []
+        self._ensure_collection()
+        expr = "kb_id in [" + ",".join(str(int(k)) for k in kb_ids) + "]"
+        if filters:
+            for k, v in filters.items():
+                expr += f" and {k} == '{v}'"
+        rows = self._client.query(
+            collection_name=self.collection_name,
+            filter=expr,
+            output_fields=["id", "kb_id", "doc_id", "chunk_index", "filename", "text", "vector"],
+        )
+        return [
+            {
+                "id": r["id"],
+                "kb_id": r.get("kb_id", 0),
+                "doc_id": r["doc_id"],
+                "chunk_index": r["chunk_index"],
+                "filename": r.get("filename", ""),
+                "text": r.get("text", ""),
+                "vector": r.get("vector"),
             }
             for r in rows
         ]

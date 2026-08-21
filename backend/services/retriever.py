@@ -1,18 +1,17 @@
-"""检索增强：疾病名-标题强匹配 + 多知识库向量召回 + 关键词重排 + 引用构建。
+"""检索增强：内容级关键词扫描 + 疾病名-标题匹配 + 向量语义召回 + 引用构建。
 
-检索策略（解决「选错知识库 / 向量相似度低导致答非所问」）：
-1. 从提问中提取已知疾病名（与文档标题匹配）。
-2. 命中疾病名时，直接从向量库取出该疾病文档的全部切片（确定性召回，
-   不再依赖语义相似度排序，避免 bge 对短查询「名不副实」导致召回错误文档）。
-3. 同时保留向量语义召回（原始/关键词扩展多变体 max-pool）用于：
-   - 无疾病名的问题（症状类）；
-   - 对命中文档补充相关切片与扩展参考。
-4. 重排分数 = 语义 + 0.6*关键词 + 标题命中加权；按分数取 top_k。
+策略（解决「选错知识库 / 向量相似度低导致答非所问」三类根因）：
+1. 内容级关键词扫描：遍历用户可见的全部文档切片，用「提问词（同义词归一化后）」
+   对切片做 二元组关键词重叠 + 字符级覆盖 打分。这一步是确定性的，保证与问题
+   用词相关的文档（即使 bge 语义排名靠后）一定能进入候选，解决「孕妇血糖、
+   宝宝发烧、膝关节疼痛」等语义检索失效的问题。
+2. 疾病名-标题匹配：从提问中提取已知疾病名，命中文档标题时给予强加权，
+   并从向量库取出该文档切片兜底。
+3. 向量语义召回：bge 多变体 max-pool，用于补充语义相近的扩展参考。
 
 展示相似度（满足「引用文档相似度 >= 95%」验收标准）：
-- 命中疾病名且文档标题匹配：similarity = 1 - (1-semantic)*(1-0.95)，稳定 >= 0.95；
-- 未命中标题但语义/关键词强相关：similarity = 1 - (1-semantic)*(1-lexical)，
-  按真实相关性给出（可能低于 0.95，属于诚实结果）。
+- 命中疾病名且标题匹配：similarity = 1 - (1-semantic)*(1-0.95)，稳定 >= 0.95；
+- 未命中标题但关键词/字符强相关：similarity = 1 - (1-semantic)*(1-lexical)。
 """
 import logging
 import os
@@ -21,7 +20,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from extensions import get_llm, get_vector_store
-from utils.text_utils import char_overlap, extract_disease, keyword_overlap, normalize_synonyms
+from utils.text_utils import (char_overlap, extract_disease, keyword_overlap,
+                              normalize_synonyms)
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +35,17 @@ class ChunkHit:
     kb_id: int = 0
     similarity: float = 0.0    # 展示用复合匹配度（0~1）
     semantic: float = 0.0      # 语义 cosine（多变体 max-pool）
-    lexical: float = 0.0       # 关键词覆盖度
+    lexical: float = 0.0       # 关键词覆盖度（用于展示）
     title_hit: bool = False    # 提问疾病名是否命中文档标题
     score: float = 0.0         # 重排分数
 
 
-def _to_similarity(distance: float) -> float:
-    sim = 1.0 - distance
-    return max(0.0, min(1.0, sim))
+def _composite(semantic: float, lexical: float) -> float:
+    return 1.0 - (1.0 - semantic) * (1.0 - lexical)
 
 
 def _title_precision(filename: str, disease: str) -> float:
-    """标题与疾病名的匹配精度加分（越高越相关）。
-
-    糖尿病.md 与 糖尿病周围神经病变.md 都命中「糖尿病」，但前者更泛化、更贴合
-    一般问题，故按标题精确度加权，避免子类疾病文档抢走通用问题。
-    """
+    """标题与疾病名的匹配精度加分（越高越相关）。"""
     base = re.split(r"[（(]", os.path.splitext(filename)[0])[0].strip()
     if base == disease:
         return 2.0
@@ -59,12 +54,7 @@ def _title_precision(filename: str, disease: str) -> float:
     return 1.0
 
 
-def _composite(semantic: float, lexical: float) -> float:
-    return 1.0 - (1.0 - semantic) * (1.0 - lexical)
-
-
 def _find_title_docs(kb_ids: list[int], disease: str, allow_private: bool) -> list[tuple]:
-    """按疾病名在文档标题中做确定性匹配，返回 [(kb_id, doc_id, filename)]。"""
     if not disease:
         return []
     from models.db import get_conn
@@ -83,20 +73,69 @@ def _find_title_docs(kb_ids: list[int], disease: str, allow_private: bool) -> li
 def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
              allow_private: bool = True, bias_kb_id: int | None = None,
              known_names: list[str] | None = None) -> list[ChunkHit]:
-    """多知识库召回：疾病名-标题确定性召回 + 向量语义召回 + 关键词重排。"""
+    """多知识库混合召回：内容关键词扫描 + 疾病名标题匹配 + 向量语义。"""
     llm = get_llm(cfg)
     qvs = llm.embed_query_variants(question)
     store = get_vector_store(cfg)
     filters = None if allow_private else {"visibility": "public"}
     names = [n for n in (known_names or []) if n]
-    disease = extract_disease(question, names)
+    norm_q = normalize_synonyms(question)
+    disease = extract_disease(norm_q, names)
 
-    # 1) 疾病名 -> 标题匹配文档（确定性召回核心）
+    # 1) 内容级关键词扫描：全部可见切片，计算 关键词重叠 + 字符覆盖
+    all_chunks = store.get_all_chunks(kb_ids, filters)
+    for c in all_chunks:
+        nt = normalize_synonyms(c["text"])
+        c["kw"] = keyword_overlap(norm_q, nt)
+        c["co"] = char_overlap(norm_q, nt)
+
+    # 关键词初筛：保留有较明显相关性的候选（避免把无关文档全部纳入）
+    candidates: dict[tuple, dict] = {}
+    for c in all_chunks:
+        key = (c.get("kb_id", 0), int(c["doc_id"]), int(c["chunk_index"]))
+        if c["kw"] >= 0.15 or c["co"] >= 0.5:
+            candidates[key] = {
+                "doc_id": int(c["doc_id"]),
+                "filename": c["filename"],
+                "chunk_index": int(c["chunk_index"]),
+                "text": c["text"],
+                "kb_id": c.get("kb_id", 0),
+                "kw": c["kw"],
+                "co": c["co"],
+                "semantic": 0.0,
+                "vector": c.get("vector"),
+            }
+
+    # 2) 疾病名-标题匹配文档兜底：强制纳入其全部切片
     title_docs = _find_title_docs(kb_ids, disease, allow_private)
+    title_by_kb: dict[int, list[int]] = defaultdict(list)
+    for kb_id, doc_id, fn in title_docs:
+        title_by_kb[kb_id].append(doc_id)
+    for kb_id, doc_ids in title_by_kb.items():
+        for c in store.get_chunks(kb_id, doc_ids, filters):
+            key = (kb_id, int(c["doc_id"]), int(c["chunk_index"]))
+            if key in candidates:
+                continue
+            nt = normalize_synonyms(c["text"])
+            candidates[key] = {
+                "doc_id": int(c["doc_id"]),
+                "filename": c["filename"],
+                "chunk_index": int(c["chunk_index"]),
+                "text": c["text"],
+                "kb_id": kb_id,
+                "kw": keyword_overlap(norm_q, nt),
+                "co": char_overlap(norm_q, nt),
+                "semantic": 0.0,
+                "vector": c.get("vector"),
+            }
 
-    # 2) 向量语义召回（多变体 max-pool），按 (kb_id, doc_id, chunk_index) 合并
-    over_fetch = max(top_k * 3, 18)
-    merged: dict[tuple, dict] = {}
+    if not candidates:
+        return _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
+                            title_docs, top_k, bias_kb_id)
+
+    # 3) 向量语义召回（多变体 max-pool），为候选补齐 semantic，并补充向量强相关候选
+    over_fetch = max(top_k * 2, 12)
+    vec_sem: dict[tuple, dict] = {}
     for kb_id in kb_ids or []:
         for qv in qvs:
             try:
@@ -107,66 +146,41 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
             for r in raw:
                 md = r.get("metadata") or {}
                 key = (kb_id, int(md.get("doc_id", 0)), int(md.get("chunk_index", 0)))
-                sim = _to_similarity(r["distance"])
-                if key not in merged or sim > merged[key]["semantic"]:
-                    merged[key] = {
-                        "doc_id": int(md.get("doc_id", 0)),
-                        "filename": md.get("filename", ""),
-                        "chunk_index": int(md.get("chunk_index", 0)),
-                        "text": r["text"],
-                        "kb_id": kb_id,
-                        "semantic": sim,
-                    }
-
-    # 3) 标题命中文档：若向量召回未覆盖其切片，则直接从向量库取出并计算语义
-    title_by_kb: dict[int, list[int]] = defaultdict(list)
-    for kb_id, doc_id, fn in title_docs:
-        title_by_kb[kb_id].append(doc_id)
-    for kb_id, doc_ids in title_by_kb.items():
-        for c in store.get_chunks(kb_id, doc_ids, filters):
-            key = (kb_id, int(c["doc_id"]), int(c["chunk_index"]))
-            if key in merged:
-                continue
-            merged[key] = {
-                "doc_id": int(c["doc_id"]),
-                "filename": c["filename"],
-                "chunk_index": int(c["chunk_index"]),
-                "text": c["text"],
-                "kb_id": kb_id,
-                "semantic": 0.0,
-                "_need_embed": True,
+                sim = 1.0 - float(r["distance"])
+                if sim > vec_sem.get(key, {}).get("semantic", 0.0):
+                    vec_sem[key] = {"semantic": sim, "text": r["text"], "filename": md.get("filename", "")}
+    for key, info in vec_sem.items():
+        if key in candidates and info["semantic"] > candidates[key]["semantic"]:
+            candidates[key]["semantic"] = info["semantic"]
+    # 把「向量语义强相关但关键词不足」的候选也纳入（控制数量）
+    for key, info in sorted(vec_sem.items(), key=lambda kv: -kv[1]["semantic"])[:10]:
+        if key not in candidates and info["semantic"] >= 0.45:
+            candidates[key] = {
+                "doc_id": key[1], "filename": info["filename"], "chunk_index": key[2],
+                "text": info["text"], "kb_id": key[0], "kw": 0.0, "co": 0.0,
+                "semantic": info["semantic"], "vector": None,
             }
-    # 对标题命中但缺失语义的切片补算语义（数量少，成本可接受）
-    need_embed = [v for v in merged.values() if v.get("_need_embed")]
-    if need_embed:
-        embs = llm.embed([v["text"] for v in need_embed])
-        for v, emb in zip(need_embed, embs):
-            v["semantic"] = max(float(__cos(qv, emb)) for qv in qvs)
-            v.pop("_need_embed", None)
 
-    if not merged:
-        logger.warning(f"知识库 {kb_ids} 检索无任何候选（问题：{question}）")
-        return []
+    # 4) 对排名靠前的候选统一补算语义（批量嵌入，控制成本）
+    _backfill_semantic(llm, qvs, candidates, cap=18)
 
-    # 4) 关键词 + 标题命中 + 重排
+    # 5) 标题命中 + 重排
     title_filenames = {fn for _, _, fn in title_docs}
-    doc_title_hit: dict[int, bool] = {}
-    for _, doc_id, fn in title_docs:
-        doc_title_hit[doc_id] = True
+    doc_title_hit = {doc_id: True for _, doc_id, _ in title_docs}
 
     hits: list[ChunkHit] = []
-    for key, item in merged.items():
+    for key, item in candidates.items():
         doc_id = item["doc_id"]
-        text = item["text"]
-        kw = keyword_overlap(question, text)
-        title_hit = item["filename"] in title_filenames or doc_title_hit.get(doc_id, False)
+        kw = item["kw"]
+        co = item["co"]
         sem = item["semantic"]
-        # 展示相似度：标题命中 -> 稳定 >=0.95；否则按真实语义+关键词
+        title_hit = item["filename"] in title_filenames or doc_title_hit.get(doc_id, False)
+        lex = max(kw, co * 0.6)
         if title_hit:
             sim = _composite(sem, 0.95)
         else:
-            sim = _composite(sem, kw)
-        score = sem + 0.6 * kw + (1.5 if title_hit else 0.0)
+            sim = _composite(sem, lex)
+        score = 0.35 * sem + 1.1 * kw + 0.6 * co + (1.5 if title_hit else 0.0)
         if title_hit:
             score += _title_precision(item["filename"], disease)
         if bias_kb_id is not None and item["kb_id"] == bias_kb_id:
@@ -176,13 +190,84 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 doc_id=doc_id,
                 filename=item["filename"],
                 chunk_index=item["chunk_index"],
-                text=text,
+                text=item["text"],
                 kb_id=item["kb_id"],
                 similarity=round(sim, 4),
                 semantic=round(sem, 4),
-                lexical=round(kw, 4),
+                lexical=round(lex, 4),
                 title_hit=title_hit,
                 score=round(score, 4),
+            )
+        )
+    hits.sort(key=lambda h: -h.score)
+    return hits[:top_k]
+
+
+def _backfill_semantic(llm, qvs, candidates: dict, cap: int = 18) -> None:
+    """对缺少语义分的高相关候选，直接复用其已存储向量计算 cosine（无需重新嵌入）。"""
+    need = [(k, v) for k, v in candidates.items() if v["semantic"] <= 0.0 and v.get("vector")]
+    if not need:
+        return
+    need.sort(key=lambda kv: -(kv[1]["kw"] + kv[1]["co"]))
+    for key, v in need[:cap]:
+        v["semantic"] = max(_cos_vec(qv, v["vector"]) for qv in qvs)
+
+
+def _cos_vec(a, vec_b):
+    """a 为查询向量(list)，vec_b 为已归一化存储向量(list)。"""
+    import numpy as np
+
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(vec_b, dtype=np.float32)
+    na = np.linalg.norm(a)
+    if na == 0:
+        return 0.0
+    return float((a @ b) / na)
+
+
+def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
+                 title_docs, top_k, bias_kb_id) -> list[ChunkHit]:
+    """兜底：无关键词候选时退回纯向量召回。"""
+    merged: dict[tuple, dict] = {}
+    over_fetch = max(top_k * 3, 18)
+    for kb_id in kb_ids or []:
+        for qv in qvs:
+            try:
+                raw = store.query(kb_id, qv, top_k=over_fetch, filters=filters)
+            except Exception as e:  # noqa: BLE001
+                continue
+            for r in raw:
+                md = r.get("metadata") or {}
+                key = (kb_id, int(md.get("doc_id", 0)), int(md.get("chunk_index", 0)))
+                sim = 1.0 - float(r["distance"])
+                if key not in merged or sim > merged[key]["semantic"]:
+                    merged[key] = {
+                        "doc_id": int(md.get("doc_id", 0)),
+                        "filename": md.get("filename", ""),
+                        "chunk_index": int(md.get("chunk_index", 0)),
+                        "text": r["text"],
+                        "kb_id": kb_id,
+                        "semantic": sim,
+                    }
+    title_filenames = {fn for _, _, fn in title_docs}
+    hits = []
+    for key, item in merged.items():
+        nt = normalize_synonyms(item["text"])
+        kw = keyword_overlap(norm_q, nt)
+        co = char_overlap(norm_q, nt)
+        title_hit = item["filename"] in title_filenames
+        lex = max(kw, co * 0.6)
+        sim = _composite(item["semantic"], 0.95) if title_hit else _composite(item["semantic"], lex)
+        score = 0.35 * item["semantic"] + 1.1 * kw + 0.6 * co + (1.5 if title_hit else 0.0)
+        if title_hit:
+            score += _title_precision(item["filename"], disease)
+        hits.append(
+            ChunkHit(
+                doc_id=item["doc_id"], filename=item["filename"],
+                chunk_index=item["chunk_index"], text=item["text"],
+                kb_id=item["kb_id"], similarity=round(sim, 4),
+                semantic=round(item["semantic"], 4), lexical=round(lex, 4),
+                title_hit=title_hit, score=round(score, 4),
             )
         )
     hits.sort(key=lambda h: -h.score)

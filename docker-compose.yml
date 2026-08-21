@@ -1,7 +1,9 @@
+name: medical-assistant
+
 services:
   # ---- MySQL 8 数据库（库名 medical-assistant-master，backend 启动时自动建表）----
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.40
     container_name: medical-mysql
     restart: unless-stopped
     environment:
@@ -15,7 +17,7 @@ services:
     ports:
       - "3307:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_PASSWORD:-123456}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -46,13 +48,13 @@ services:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     restart: unless-stopped
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio_data:/minio_data
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -79,7 +81,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
       interval: 30s
       start_period: 90s
       timeout: 20s
@@ -88,6 +90,10 @@ services:
   backend:
     build: ./backend
     container_name: medical-backend
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
     depends_on:
       mysql:
         condition: service_healthy
@@ -114,19 +120,21 @@ services:
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
       # 本地向量模型：默认 HF 模型 id（容器内自动从 hf-mirror.com 下载，需网络）。
       # 如需使用已下载的本地模型，可把 data/models 挂载进容器并设置
-      # OPENAI_EMBED_MODEL=/data/models/bge-base-zh-v1.5（同时 volumes 增加 ./backend/data/models:/data/models）。
+      # OPENAI_EMBED_MODEL=/data/models/bge-base-zh-v1.5（同时 volumes 增加 ./backend/data/models:/data/models:ro）。
       OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-BAAI/bge-base-zh-v1.5}
       EMBED_DIM: ${EMBED_DIM:-768}
-      CHUNK_SIZE: ${CHUNK_SIZE:-500}
-      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-80}
-      TOP_K: ${TOP_K:-5}
+      CHUNK_SIZE: ${CHUNK_SIZE:-380}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-60}
+      TOP_K: ${TOP_K:-6}
       MIN_SIMILARITY: ${MIN_SIMILARITY:-0.30}
+      QUERY_PREFIX: ${QUERY_PREFIX:-}
+      QUERY_EXPAND: ${QUERY_EXPAND:-1}
     volumes:
       - medical_data:/data
     ports:
       - "8010:8010"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8010/api/health',timeout=3); sys.exit(0)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8010/api/health',timeout=3); sys.exit(0)\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,6 +143,7 @@ services:
   frontend:
     build: ./frontend
     container_name: medical-frontend
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy

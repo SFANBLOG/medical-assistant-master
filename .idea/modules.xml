@@ -2,7 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$USER_HOME$/Desktop/AI大模型-高新杰/.idea/AI大模型-高新杰.iml" filepath="$USER_HOME$/Desktop/AI大模型-高新杰/.idea/AI大模型-高新杰.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../../AILLM-Student/all-agent-study/.idea/12-於方仁.iml" filepath="$PROJECT_DIR$/../../AILLM-Student/all-agent-study/.idea/12-於方仁.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../../AI大模型-高新杰/.idea/AI大模型-高新杰.iml" filepath="$PROJECT_DIR$/../../AI大模型-高新杰/.idea/AI大模型-高新杰.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/integrated-qa-system.iml" filepath="$PROJECT_DIR$/.idea/integrated-qa-system.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/medical_assistant-master.iml" filepath="$PROJECT_DIR$/.idea/medical_assistant-master.iml" />
       <module fileurl="file://$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/.idea/yu-ai-learn-main.iml" filepath="$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/.idea/yu-ai-learn-main.iml" />
