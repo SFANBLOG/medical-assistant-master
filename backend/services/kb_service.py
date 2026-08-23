@@ -34,7 +34,7 @@ def can_view_kb(user: dict, kb: dict) -> bool:
 
 def can_delete_kb(user: dict, kb: dict) -> bool:
     return user["role"] == "admin" or kb["owner_id"] == user["id"] or (
-        can_manage_public(user) and kb["visibility"] == "public"
+            can_manage_public(user) and kb["visibility"] == "public"
     )
 
 
@@ -223,7 +223,7 @@ def add_document(user: dict, kb_id: int, upload_file, visibility: str = "") -> d
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
-           VALUES (?,?,?,?,?,'processing')""",
+           VALUES (?, ?, ?, ?, ?, 'processing')""",
         (kb_id, filename, "", ext.lstrip("."), visibility),
     )
     doc_id = cur.lastrowid

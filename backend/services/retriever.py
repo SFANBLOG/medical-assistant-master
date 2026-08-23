@@ -33,11 +33,11 @@ class ChunkHit:
     chunk_index: int
     text: str
     kb_id: int = 0
-    similarity: float = 0.0    # 展示用复合匹配度（0~1）
-    semantic: float = 0.0      # 语义 cosine（多变体 max-pool）
-    lexical: float = 0.0       # 关键词覆盖度（用于展示）
-    title_hit: bool = False    # 提问疾病名是否命中文档标题
-    score: float = 0.0         # 重排分数
+    similarity: float = 0.0  # 展示用复合匹配度（0~1）
+    semantic: float = 0.0  # 语义 cosine（多变体 max-pool）
+    lexical: float = 0.0  # 关键词覆盖度（用于展示）
+    title_hit: bool = False  # 提问疾病名是否命中文档标题
+    score: float = 0.0  # 重排分数
 
 
 def _composite(semantic: float, lexical: float) -> float:

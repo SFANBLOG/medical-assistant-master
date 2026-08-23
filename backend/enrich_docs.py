@@ -1,6 +1,6 @@
 """知识库文档「追写」增强脚本。
 
-对 backend/data/kb_docs_src/<知识库>/公开|私有/*.md 下的全部文档进行内容追写：
+对 backend/data/uploads/<知识库>/公开|私有/*.md 下的全部文档进行内容追写：
 在每个文档末尾追加以下章节（内容以原文事实为基准 + 按科室分类的通用循证建议，
 不臆造具体诊疗方案）：
 
@@ -17,7 +17,7 @@ import os
 import re
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(BASE, "data", "kb_docs_src")
+SRC = os.path.join(BASE, "data", "uploads")
 
 PUBLIC_DIR = "公开"
 PRIVATE_DIR = "私有"
