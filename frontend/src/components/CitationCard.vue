@@ -14,8 +14,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { Citation } from '../types'
+import {computed} from 'vue'
+import type {Citation} from '../types'
 
 const props = defineProps<{ index: number; citation: Citation }>()
 

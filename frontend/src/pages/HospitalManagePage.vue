@@ -87,11 +87,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {onMounted, reactive, ref} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
 import dayjs from 'dayjs'
-import { doctorApi } from '../api/endpoints'
-import type { Hospitalization, PatientSummary } from '../types'
+import {doctorApi} from '../api/endpoints'
+import type {Hospitalization, PatientSummary} from '../types'
 
 const DEPARTMENTS = [
   '心血管内科', '呼吸内科', '消化内科', '神经内科', '内分泌科',

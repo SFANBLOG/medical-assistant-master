@@ -1,7 +1,6 @@
 """医生端 API：患者管理、住院信息管理。"""
-from flask import Blueprint, g, request
-
 from api.decorators import require_roles
+from flask import Blueprint, g, request
 from services import doctor_service
 
 doctor_bp = Blueprint("doctor", __name__)

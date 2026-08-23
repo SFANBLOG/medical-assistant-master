@@ -1,6 +1,5 @@
-from flask import Blueprint, g, request
-
 from api.decorators import require_auth, require_roles
+from flask import Blueprint, g, request
 from services import kb_service
 from utils.errors import ApiError
 

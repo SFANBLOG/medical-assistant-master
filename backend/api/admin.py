@@ -1,7 +1,6 @@
 """系统管理员 API：用户管理、全系统统计。"""
-from flask import Blueprint, request
-
 from api.decorators import require_roles
+from flask import Blueprint, request
 from services import admin_service
 
 admin_bp = Blueprint("admin", __name__)

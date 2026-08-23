@@ -28,11 +28,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { dashboardApi } from '../api/endpoints'
-import { ROLE_LABELS } from '../types'
-import type { DashboardStats, RecentConversation } from '../types'
+import {onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {dashboardApi} from '../api/endpoints'
+import type {DashboardStats, RecentConversation} from '../types'
+import {ROLE_LABELS} from '../types'
 
 const stats = ref<DashboardStats | null>(null)
 const recent = ref<RecentConversation[]>([])

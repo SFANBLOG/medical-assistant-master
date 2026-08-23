@@ -27,10 +27,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { kbApi } from '../api/endpoints'
-import type { DocumentItem, KnowledgeBase } from '../types'
+import {onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {kbApi} from '../api/endpoints'
+import type {DocumentItem, KnowledgeBase} from '../types'
 
 const kbs = ref<KnowledgeBase[]>([])
 const docsMap = ref<Record<number, DocumentItem[]>>({})

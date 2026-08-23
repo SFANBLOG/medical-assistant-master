@@ -105,11 +105,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { kbApi } from '../api/endpoints'
-import { useAuth } from '../stores/auth'
-import type { DocumentItem, KnowledgeBase, Visibility } from '../types'
+import {onMounted, reactive, ref} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {kbApi} from '../api/endpoints'
+import {useAuth} from '../stores/auth'
+import type {DocumentItem, KnowledgeBase, Visibility} from '../types'
 
 const auth = useAuth()
 const isDoctor = auth.user?.role === 'doctor'

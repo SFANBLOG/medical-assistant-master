@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import MarkdownView from './MarkdownView.vue'
 import CitationCard from './CitationCard.vue'
-import type { Citation } from '../types'
+import type {Citation} from '../types'
 
 defineProps<{
   role: 'user' | 'assistant'

@@ -1,7 +1,6 @@
 """患者端 API：查询本人住院信息、消费明细、预约挂号。"""
-from flask import Blueprint, g, request
-
 from api.decorators import require_roles
+from flask import Blueprint, g, request
 from services import patient_service
 
 patient_bp = Blueprint("patient", __name__)

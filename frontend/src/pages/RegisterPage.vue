@@ -39,13 +39,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
-import { useAuth } from '../stores/auth'
-import { ROLE_LABELS } from '../types'
-import type { Role } from '../types'
+import {reactive, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import type {FormInstance, FormRules} from 'element-plus'
+import {ElMessage} from 'element-plus'
+import {useAuth} from '../stores/auth'
+import type {Role} from '../types'
+import {ROLE_LABELS} from '../types'
 
 const auth = useAuth()
 const router = useRouter()

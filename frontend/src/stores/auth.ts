@@ -1,6 +1,6 @@
-import { defineStore } from 'pinia'
-import { authApi } from '../api/endpoints'
-import type { Role, User } from '../types'
+import {defineStore} from 'pinia'
+import {authApi} from '../api/endpoints'
+import type {Role, User} from '../types'
 
 function readStoredUser(): User | null {
   try {

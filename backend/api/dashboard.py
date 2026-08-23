@@ -1,6 +1,5 @@
-from flask import Blueprint, g
-
 from api.decorators import require_auth, require_roles
+from flask import Blueprint, g
 from models.db import get_conn
 
 dashboard_bp = Blueprint("dashboard", __name__)

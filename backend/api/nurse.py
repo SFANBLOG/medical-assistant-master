@@ -1,7 +1,6 @@
 """护士端 API：患者信息、护理记录。"""
-from flask import Blueprint, g, request
-
 from api.decorators import require_roles
+from flask import Blueprint, g, request
 from services import nurse_service
 
 nurse_bp = Blueprint("nurse", __name__)

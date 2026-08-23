@@ -1,7 +1,6 @@
 """医护排班 API（医生/护士共用）。"""
-from flask import Blueprint, g, request
-
 from api.decorators import require_roles
+from flask import Blueprint, g, request
 from services import schedule_service
 
 schedule_bp = Blueprint("schedule", __name__)

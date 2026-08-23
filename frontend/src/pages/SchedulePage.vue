@@ -57,11 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { scheduleApi } from '../api/endpoints'
-import { ROLE_LABELS, SHIFT_LABELS } from '../types'
-import type { Schedule } from '../types'
+import {computed, onMounted, reactive, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {scheduleApi} from '../api/endpoints'
+import type {Schedule} from '../types'
+import {ROLE_LABELS, SHIFT_LABELS} from '../types'
 
 const SHIFT_COLORS: Record<string, string> = { day: 'primary', night: 'warning', evening: 'danger', off: 'info' }
 const DEPARTMENTS = ['心血管内科', '呼吸内科', '消化内科', '神经内科', '内分泌科', '儿科', '急诊科', '骨科']

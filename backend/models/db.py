@@ -10,10 +10,9 @@
 两种数据库均返回兼容行对象：既支持 row["col"]，也支持 row[0] 与 dict(row)。
 """
 import os
-
-import pymysql
 import sqlite3
 
+import pymysql
 from flask import g
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")

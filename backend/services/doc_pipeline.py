@@ -1,7 +1,6 @@
 """文档入库流水线：抽取文本 -> 切分 -> 向量化 -> 写入向量库（Milvus / NumpyStore 兜底）。"""
-from flask import current_app
-
 from extensions import get_vector_store, get_llm
+from flask import current_app
 from models.db import get_conn
 from utils.file_utils import extract_text
 from utils.text_utils import chunk_text

@@ -25,13 +25,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import type { EChartsOption } from 'echarts'
+import {computed, onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import type {EChartsOption} from 'echarts'
 import EChart from '../components/EChart.vue'
-import { dashboardApi } from '../api/endpoints'
-import { ROLE_LABELS } from '../types'
-import type { DashboardStats } from '../types'
+import {dashboardApi} from '../api/endpoints'
+import type {DashboardStats} from '../types'
+import {ROLE_LABELS} from '../types'
 
 const stats = ref<DashboardStats | null>(null)
 

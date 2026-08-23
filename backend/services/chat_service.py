@@ -4,9 +4,8 @@ import uuid
 from datetime import datetime
 from typing import Iterator
 
-from flask import current_app, Response
-
 from extensions import get_llm
+from flask import current_app, Response
 from models.db import get_conn
 from services.kb_service import (get_kb, can_view_kb, can_view_private_docs,
                                  list_visible_kb_ids, list_known_doc_names)

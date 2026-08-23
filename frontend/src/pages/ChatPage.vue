@@ -40,12 +40,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import {nextTick, onMounted, ref, watch} from 'vue'
+import {useRoute} from 'vue-router'
+import {ElMessage} from 'element-plus'
 import ChatMessage from '../components/ChatMessage.vue'
-import { chatApi, kbApi } from '../api/endpoints'
-import type { Citation, KnowledgeBase, Message } from '../types'
+import {chatApi, kbApi} from '../api/endpoints'
+import type {Citation, KnowledgeBase, Message} from '../types'
 
 interface DisplayMessage {
   id: number | string

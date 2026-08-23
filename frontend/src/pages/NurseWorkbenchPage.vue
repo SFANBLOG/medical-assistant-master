@@ -80,12 +80,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { nurseApi, scheduleApi } from '../api/endpoints'
-import { useAuth } from '../stores/auth'
-import { SHIFT_LABELS } from '../types'
-import type { NursingRecord, PatientSummary, Schedule } from '../types'
+import {onMounted, reactive, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {nurseApi, scheduleApi} from '../api/endpoints'
+import {useAuth} from '../stores/auth'
+import type {NursingRecord, PatientSummary, Schedule} from '../types'
+import {SHIFT_LABELS} from '../types'
 
 const RECORD_TYPE_LABELS: Record<string, string> = {
   daily: '日常护理',

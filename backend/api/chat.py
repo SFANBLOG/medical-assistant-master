@@ -1,6 +1,5 @@
-from flask import Blueprint, g, request
-
 from api.decorators import require_auth
+from flask import Blueprint, g, request
 from services import chat_service
 from utils.errors import ApiError
 

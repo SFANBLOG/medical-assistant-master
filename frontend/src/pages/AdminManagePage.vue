@@ -94,11 +94,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminApi } from '../api/endpoints'
-import { ROLE_LABELS, ROLE_TAG_TYPES } from '../types'
-import type { AdminUserRow, Role } from '../types'
+import {onMounted, reactive, ref} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {adminApi} from '../api/endpoints'
+import type {AdminUserRow, Role} from '../types'
+import {ROLE_LABELS, ROLE_TAG_TYPES} from '../types'
 
 interface AdminStats {
   user_count: number

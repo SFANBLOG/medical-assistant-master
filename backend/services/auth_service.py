@@ -3,10 +3,9 @@ import datetime
 from typing import Optional
 
 import jwt
-from werkzeug.security import check_password_hash, generate_password_hash
-
 from models.db import get_conn
 from utils.errors import ApiError
+from werkzeug.security import check_password_hash, generate_password_hash
 
 VALID_ROLES = ("patient", "doctor", "nurse", "public", "admin")
 

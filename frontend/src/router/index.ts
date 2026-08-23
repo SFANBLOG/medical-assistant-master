@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import { useAuth } from '../stores/auth'
-import type { Role } from '../types'
+import {createRouter, createWebHistory} from 'vue-router'
+import {useAuth} from '../stores/auth'
+import type {Role} from '../types'
 import MainLayout from '../layouts/MainLayout.vue'
 
 const ALL: Role[] = ['patient', 'doctor', 'nurse', 'public', 'admin']

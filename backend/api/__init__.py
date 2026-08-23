@@ -1,16 +1,15 @@
 """API 蓝图注册。"""
-from flask import Blueprint
 
-from api.decorators import health_bp  # noqa: F401
+from api.admin import admin_bp
 from api.auth import auth_bp
-from api.kb import kb_bp
 from api.chat import chat_bp
 from api.dashboard import dashboard_bp
-from api.patient import patient_bp
+from api.decorators import health_bp  # noqa: F401
 from api.doctor import doctor_bp
+from api.kb import kb_bp
 from api.nurse import nurse_bp
+from api.patient import patient_bp
 from api.schedule import schedule_bp
-from api.admin import admin_bp
 
 
 def register_blueprints(app):

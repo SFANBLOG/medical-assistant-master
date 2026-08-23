@@ -1,7 +1,6 @@
-from flask import Blueprint, current_app, g, request
-
-from services import auth_service
 from api.decorators import require_auth
+from flask import Blueprint, current_app, g, request
+from services import auth_service
 from utils.errors import ApiError
 
 auth_bp = Blueprint("auth", __name__)

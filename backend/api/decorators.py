@@ -2,7 +2,6 @@
 from functools import wraps
 
 from flask import Blueprint, g, request
-
 from models.db import get_conn
 from services.auth_service import decode_token
 from utils.errors import ApiError
