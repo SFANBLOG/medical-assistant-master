@@ -132,6 +132,15 @@ class Config:
     ALLOWED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", ".pptx"}
     MAX_CONTENT_LENGTH = 20 * 1024 * 1024
 
+    # ---- Redis 缓存（检索结果/会话缓存，降低重复向量计算与数据库压力）----
+    # REDIS_ENABLE=0 时完全关闭缓存（含进程内兜底），不影响主流程。
+    REDIS_ENABLE = os.environ.get("REDIS_ENABLE", "1")
+    REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+    REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
+    REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
+    REDIS_TTL = int(os.environ.get("REDIS_TTL", "600"))  # 缓存过期秒数
+
     # ---- 跨域 ----
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 

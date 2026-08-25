@@ -9,7 +9,8 @@ from flask import current_app, Response
 from models.db import get_conn
 from services.kb_service import (get_kb, can_view_kb, can_view_private_docs,
                                  list_visible_kb_ids, list_known_doc_names)
-from services.retriever import retrieve, build_context, build_citations
+from services.retriever import retrieve, build_context, build_citations, ChunkHit
+from services.cache import cached_json
 from utils.errors import ApiError
 
 SYSTEM_PROMPT = """你是一名专业、严谨的医疗健康助手。请仅依据【参考资料】回答用户的问题，不要编造事实。
@@ -90,9 +91,20 @@ def ask(user: dict, conversation_id: str | None, kb_id: int | None, question: st
     )
     conn.commit()
 
-    hits = retrieve(cfg, kb_ids, question, top_k=cfg["TOP_K"],
-                    allow_private=allow_private, bias_kb_id=kb["id"],
-                    known_names=known_names)
+    # 检索结果缓存：相同（问题 + 可见知识库 + 公开/私有权限）直接复用，
+    # 避免重复的关键词扫描与向量召回计算；ChunkHit 均为可序列化标量，缓存安全。
+    def _retrieve_hits() -> list[dict]:
+        hs = retrieve(cfg, kb_ids, question, top_k=cfg["TOP_K"],
+                      allow_private=allow_private, bias_kb_id=kb["id"],
+                      known_names=known_names)
+        return [h.__dict__ for h in hs]
+
+    _cache_key = (
+        f"rag:hits:{int(allow_private)}:"
+        f"{','.join(map(str, sorted(kb_ids)))}:{question}"
+    )
+    _hits_dicts = cached_json(_cache_key, cfg["REDIS_TTL"], _retrieve_hits)
+    hits = [ChunkHit(**d) for d in _hits_dicts]
     context = build_context(hits)
     citations = build_citations(hits)
     llm = get_llm(cfg)

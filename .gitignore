@@ -11,6 +11,9 @@ dist/
 # Runtime data (created at startup; Docker uses a named volume instead)
 backend/data/*
 !backend/data/.gitkeep
+# 知识库文档种子源：需纳入版本控制，随镜像部署并在首次启动时播种
+!backend/data/kb_docs_src/
+!backend/data/kb_docs_src/**
 
 # Env / secrets
 .env

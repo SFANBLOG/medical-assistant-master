@@ -1,6 +1,23 @@
 name: medical-assistant
 
 services:
+  # ---- Redis 缓存（检索结果/会话缓存，降低重复向量计算与数据库压力）----
+  redis:
+    image: redis:7-alpine
+    container_name: medical-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-redis123456}"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123456}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   # ---- MySQL 8 数据库（库名 medical-assistant-master，backend 启动时自动建表）----
   mysql:
     image: mysql:8.0.40
@@ -99,6 +116,8 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DB_TYPE: mysql
       DATABASE_NAME: ${DATABASE_NAME:-medical-assistant-master}
@@ -106,6 +125,12 @@ services:
       MYSQL_PORT: 3306
       MYSQL_USER: root
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      # Redis 缓存
+      REDIS_ENABLE: ${REDIS_ENABLE:-1}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123456}
+      REDIS_TTL: ${REDIS_TTL:-600}
       DATA_DIR: /data
       UPLOAD_DIR: /data/uploads
       VECTOR_DIR: /data/vectors
@@ -153,6 +178,7 @@ services:
 volumes:
   medical_data:
   mysql_data:
+  redis_data:
   etcd_data:
   minio_data:
   milvus_data:
