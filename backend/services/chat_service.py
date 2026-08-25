@@ -1,5 +1,6 @@
 """咨询服务：编排 RAG 检索 -> 大模型流式生成 -> 持久化，输出 SSE。"""
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Iterator
@@ -34,6 +35,16 @@ FALLBACK_ANSWER_TMPL = """根据知识库中检索到的以下资料：
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def _clean_answer(text: str) -> str:
+    """移除模型泄漏的内部引用标记、控制字符和重复空白。"""
+    text = re.sub(r"\[[0-9]{1,2}\]", "", text or "")
+    text = re.sub(r"【(?:参考资料|引用|来源)[^】]*】", "", text)
+    text = re.sub(r"(?m)^\s*(?:参考资料|引用来源)\s*:\s*.*$", "", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _synthesize_fallback(question: str, hits) -> str:
@@ -136,12 +147,12 @@ def ask(user: dict, conversation_id: str | None, kb_id: int | None, question: st
                 try:
                     for tok in llm.chat_stream(messages):
                         acc.append(tok)
-                        yield _sse({"type": "delta", "content": tok})
+                        yield _sse({"type": "delta", "content": _clean_answer(tok)})
                 except Exception:  # noqa: BLE001 在线调用失败（密钥失效/网络异常）降级离线合成
                     pass
-                answer = "".join(acc).strip() or None
+                answer = _clean_answer("".join(acc)) or None
             if answer is None:
-                answer = _synthesize_fallback(question, hits)
+                answer = _clean_answer(_synthesize_fallback(question, hits))
                 for i in range(0, len(answer), 8):  # 模拟流式输出
                     yield _sse({"type": "delta", "content": answer[i : i + 8]})
 

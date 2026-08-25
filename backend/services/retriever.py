@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from extensions import get_llm, get_vector_store
 from utils.text_utils import (char_overlap, extract_disease, keyword_overlap,
-                              normalize_synonyms)
+                              normalize_synonyms, tokenize)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,22 @@ class ChunkHit:
 
 def _composite(semantic: float, lexical: float) -> float:
     return 1.0 - (1.0 - semantic) * (1.0 - lexical)
+
+
+def _bm25(question: str, text: str) -> float:
+    q = tokenize(question)
+    d = tokenize(text)
+    if not q or not d:
+        return 0.0
+    counts = defaultdict(int)
+    for token in d:
+        counts[token] += 1
+    score = 0.0
+    for token in set(q):
+        tf = counts.get(token, 0)
+        if tf:
+            score += (tf * 2.2) / (tf + 1.2)
+    return min(score / max(len(set(q)), 1), 1.0)
 
 
 def _title_precision(filename: str, disease: str) -> float:
@@ -88,12 +104,13 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
         nt = normalize_synonyms(c["text"])
         c["kw"] = keyword_overlap(norm_q, nt)
         c["co"] = char_overlap(norm_q, nt)
+        c["bm25"] = _bm25(norm_q, c["text"])
 
     # 关键词初筛：保留有较明显相关性的候选（避免把无关文档全部纳入）
     candidates: dict[tuple, dict] = {}
     for c in all_chunks:
         key = (c.get("kb_id", 0), int(c["doc_id"]), int(c["chunk_index"]))
-        if c["kw"] >= 0.15 or c["co"] >= 0.5:
+        if c["kw"] >= 0.15 or c["co"] >= 0.5 or c["bm25"] >= 0.12:
             candidates[key] = {
                 "doc_id": int(c["doc_id"]),
                 "filename": c["filename"],
@@ -101,6 +118,7 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 "text": c["text"],
                 "kb_id": c.get("kb_id", 0),
                 "kw": c["kw"],
+                "bm25": c["bm25"],
                 "co": c["co"],
                 "semantic": 0.0,
                 "vector": c.get("vector"),
@@ -117,6 +135,9 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
             if key in candidates:
                 continue
             nt = normalize_synonyms(c["text"])
+            bm25 = _bm25(norm_q, c["text"])
+            if bm25 < 0.12 and keyword_overlap(norm_q, nt) < 0.15 and char_overlap(norm_q, nt) < 0.35:
+                continue
             candidates[key] = {
                 "doc_id": int(c["doc_id"]),
                 "filename": c["filename"],
@@ -125,6 +146,7 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 "kb_id": kb_id,
                 "kw": keyword_overlap(norm_q, nt),
                 "co": char_overlap(norm_q, nt),
+                "bm25": bm25,
                 "semantic": 0.0,
                 "vector": c.get("vector"),
             }
@@ -175,12 +197,12 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
         co = item["co"]
         sem = item["semantic"]
         title_hit = item["filename"] in title_filenames or doc_title_hit.get(doc_id, False)
-        lex = max(kw, co * 0.6)
+        lex = max(kw, co * 0.6, item.get("bm25", 0.0))
         if title_hit:
             sim = _composite(sem, 0.95)
         else:
             sim = _composite(sem, lex)
-        score = 0.35 * sem + 1.1 * kw + 0.6 * co + (1.5 if title_hit else 0.0)
+        score = 0.45 * sem + 0.9 * item.get("bm25", 0.0) + 0.8 * kw + 0.45 * co + (0.8 if title_hit else 0.0)
         if title_hit:
             score += _title_precision(item["filename"], disease)
         if bias_kb_id is not None and item["kb_id"] == bias_kb_id:
@@ -200,7 +222,7 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
             )
         )
     hits.sort(key=lambda h: -h.score)
-    return hits[:top_k]
+    return [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit][:top_k]
 
 
 def _backfill_semantic(llm, qvs, candidates: dict, cap: int = 18) -> None:
@@ -256,9 +278,9 @@ def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
         kw = keyword_overlap(norm_q, nt)
         co = char_overlap(norm_q, nt)
         title_hit = item["filename"] in title_filenames
-        lex = max(kw, co * 0.6)
+        lex = max(kw, co * 0.6, _bm25(norm_q, item["text"]))
         sim = _composite(item["semantic"], 0.95) if title_hit else _composite(item["semantic"], lex)
-        score = 0.35 * item["semantic"] + 1.1 * kw + 0.6 * co + (1.5 if title_hit else 0.0)
+        score = 0.45 * item["semantic"] + 0.9 * _bm25(norm_q, item["text"]) + 0.8 * kw + 0.45 * co + (0.8 if title_hit else 0.0)
         if title_hit:
             score += _title_precision(item["filename"], disease)
         hits.append(
@@ -271,7 +293,7 @@ def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
             )
         )
     hits.sort(key=lambda h: -h.score)
-    return hits[:top_k]
+    return [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit][:top_k]
 
 
 def __cos(a, b):
