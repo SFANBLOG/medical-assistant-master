@@ -155,6 +155,19 @@ def _ensure_document_visibility(conn) -> None:
     conn.commit()
 
 
+def _ensure_indexed_at(conn) -> None:
+    """兼容旧库：为 documents 表补充 indexed_at 列（最近一次向量化时间）。"""
+    if isinstance(conn, MysqlConn):
+        rows = conn.execute("SHOW COLUMNS FROM `documents` LIKE 'indexed_at'").fetchall()
+        if not rows:
+            conn.execute("ALTER TABLE `documents` ADD COLUMN `indexed_at` DATETIME NULL")
+    else:
+        cols = conn.execute("PRAGMA table_info(documents)").fetchall()
+        if not any(c["name"] == "indexed_at" for c in cols):
+            conn.execute("ALTER TABLE documents ADD COLUMN indexed_at DATETIME NULL")
+    conn.commit()
+
+
 def init_schema(cfg) -> None:
     """创建数据目录（SQLite）并执行建表 SQL。MySQL 自动建库 + 建表。"""
     if cfg.get("DB_TYPE", "mysql") == "mysql":
@@ -163,6 +176,7 @@ def init_schema(cfg) -> None:
             with open(MYSQL_SCHEMA_PATH, encoding="utf-8") as f:
                 conn.executescript(f.read())
             _ensure_document_visibility(conn)
+            _ensure_indexed_at(conn)
         return
     os.makedirs(cfg["DATA_DIR"], exist_ok=True)
     os.makedirs(cfg["UPLOAD_DIR"], exist_ok=True)
@@ -171,6 +185,7 @@ def init_schema(cfg) -> None:
         with open(SCHEMA_PATH, encoding="utf-8") as f:
             conn.executescript(f.read())
         _ensure_document_visibility(conn)
+        _ensure_indexed_at(conn)
 
 
 def get_conn() -> sqlite3.Connection | MysqlConn:

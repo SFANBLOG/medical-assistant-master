@@ -47,10 +47,12 @@ CREATE TABLE IF NOT EXISTS `documents`
     `chunk_count` INT          NOT NULL DEFAULT 0,
     `status`      VARCHAR(16)  NOT NULL DEFAULT 'processing' COMMENT 'processing/ready/failed',
     `error`       VARCHAR(512) NULL,
+    `indexed_at`  DATETIME     NULL COMMENT '最近一次向量化完成时间',
     `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_doc_kb` (`kb_id`),
-    KEY `idx_doc_visibility` (`visibility`)
+    KEY `idx_doc_visibility` (`visibility`),
+    KEY `idx_doc_kb_status` (`kb_id`, `status`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='知识库文档表';
@@ -96,7 +98,8 @@ CREATE TABLE IF NOT EXISTS `citations`
     `title`       VARCHAR(255) NULL,
     `similarity`  DOUBLE       NULL,
     PRIMARY KEY (`id`),
-    KEY `idx_citations_msg` (`message_id`)
+    KEY `idx_citations_msg` (`message_id`),
+    KEY `idx_citations_doc` (`document_id`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='回答引用来源表';

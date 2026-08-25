@@ -21,6 +21,14 @@ body,
   white-space: normal; /* 覆盖父级 .chat-bubble 的 pre-wrap，保证标题/段落正常排版 */
   color: #1f2329;
 }
+/* 答案内联引用角标 [n]：与下方来源卡片视觉关联 */
+.markdown-body sup.md-cite {
+  color: #1677ff;
+  font-weight: 600;
+  font-size: 0.78em;
+  padding: 0 2px;
+  cursor: default;
+}
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,

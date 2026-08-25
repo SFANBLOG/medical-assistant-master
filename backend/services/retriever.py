@@ -37,11 +37,59 @@ class ChunkHit:
     semantic: float = 0.0  # 语义 cosine（多变体 max-pool）
     lexical: float = 0.0  # 关键词覆盖度（用于展示）
     title_hit: bool = False  # 提问疾病名是否命中文档标题
+    heading: str = ""  # 所属小节标题（提升可读性与引用归属）
     score: float = 0.0  # 重排分数
 
 
 def _composite(semantic: float, lexical: float) -> float:
     return 1.0 - (1.0 - semantic) * (1.0 - lexical)
+
+
+def _text_sim(a: str, b: str) -> float:
+    """两段文本的相关性代理（同义词归一化后的字符覆盖与关键词重叠取大）。
+
+    用于 MMR 重排的多样性计算，无需重新嵌入。
+    """
+    na, nb = normalize_synonyms(a), normalize_synonyms(b)
+    return max(char_overlap(na, nb), keyword_overlap(na, nb))
+
+
+def _dedup_and_rerank(hits: list[ChunkHit], top_k: int, lambda_: float = 0.6,
+                       max_per_doc: int = 2) -> list[ChunkHit]:
+    """近重复去除 + MMR（最大边际相关）重排。
+
+    - 先去掉文本完全相同的切片（同一文档的冗余块）；
+    - 再以「lambda*相关性 - (1-lambda)*多样性惩罚」贪心挑选，
+      在「答得准」与「覆盖多个相关方面、避免一段话反复出现」之间取得平衡；
+    - 单文档最多采用 max_per_doc 块，防止一个文档霸占全部上下文。
+    """
+    # 1) 同文档近重复去除（文本完全一致才去，避免误删不同小节的相似内容）
+    kept: list[ChunkHit] = []
+    seen_text: set[str] = set()
+    for h in hits:
+        if h.text in seen_text:
+            continue
+        seen_text.add(h.text)
+        kept.append(h)
+
+    # 2) MMR 重排
+    selected: list[ChunkHit] = []
+    remaining = list(kept)
+    doc_count: dict[int, int] = {}
+    while remaining and len(selected) < top_k:
+        cands = []
+        for h in remaining:
+            div = max((_text_sim(h.text, s.text) for s in selected), default=0.0)
+            mmr = lambda_ * h.score - (1.0 - lambda_) * div
+            cands.append((mmr, h))
+        cands.sort(key=lambda x: -x[0])
+        # 优先选未超「单文档块数上限」的；若候选全部超限则放宽限制
+        pick = next((h for _, h in cands if doc_count.get(h.doc_id, 0) < max_per_doc), None) \
+            or cands[0][1]
+        doc_count[pick.doc_id] = doc_count.get(pick.doc_id, 0) + 1
+        selected.append(pick)
+        remaining.remove(pick)
+    return selected
 
 
 def _bm25(question: str, text: str) -> float:
@@ -121,6 +169,7 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 "bm25": c["bm25"],
                 "co": c["co"],
                 "semantic": 0.0,
+                "heading": c.get("heading", ""),
                 "vector": c.get("vector"),
             }
 
@@ -148,12 +197,13 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 "co": char_overlap(norm_q, nt),
                 "bm25": bm25,
                 "semantic": 0.0,
+                "heading": c.get("heading", ""),
                 "vector": c.get("vector"),
             }
 
     if not candidates:
         return _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
-                            title_docs, top_k, bias_kb_id)
+                            title_docs, top_k, bias_kb_id, cfg)
 
     # 3) 向量语义召回（多变体 max-pool），为候选补齐 semantic，并补充向量强相关候选
     over_fetch = max(top_k * 2, 12)
@@ -180,7 +230,8 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
             candidates[key] = {
                 "doc_id": key[1], "filename": info["filename"], "chunk_index": key[2],
                 "text": info["text"], "kb_id": key[0], "kw": 0.0, "co": 0.0,
-                "semantic": info["semantic"], "vector": None,
+                "semantic": info["semantic"], "heading": "",
+                "vector": None,
             }
 
     # 4) 对排名靠前的候选统一补算语义（批量嵌入，控制成本）
@@ -218,11 +269,17 @@ def retrieve(cfg, kb_ids: list[int], question: str, top_k: int = 6,
                 semantic=round(sem, 4),
                 lexical=round(lex, 4),
                 title_hit=title_hit,
+                heading=item.get("heading", ""),
                 score=round(score, 4),
             )
         )
     hits.sort(key=lambda h: -h.score)
-    return [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit][:top_k]
+    # 质量门 + MMR 重排（相关性×多样性）+ 同文档去重，得到最终送入 LLM 的片段
+    gated = [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit]
+    pool = gated[: cfg.get("RERANK_TOP_K", 10)]
+    return _dedup_and_rerank(pool, top_k=top_k,
+                              lambda_=cfg.get("MMR_LAMBDA", 0.6),
+                              max_per_doc=cfg.get("MAX_CHUNKS_PER_DOC", 2))
 
 
 def _backfill_semantic(llm, qvs, candidates: dict, cap: int = 18) -> None:
@@ -248,7 +305,7 @@ def _cos_vec(a, vec_b):
 
 
 def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
-                 title_docs, top_k, bias_kb_id) -> list[ChunkHit]:
+                 title_docs, top_k, bias_kb_id, cfg) -> list[ChunkHit]:
     """兜底：无关键词候选时退回纯向量召回。"""
     merged: dict[tuple, dict] = {}
     over_fetch = max(top_k * 3, 18)
@@ -270,6 +327,7 @@ def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
                         "text": r["text"],
                         "kb_id": kb_id,
                         "semantic": sim,
+                        "heading": md.get("heading", ""),
                     }
     title_filenames = {fn for _, _, fn in title_docs}
     hits = []
@@ -289,11 +347,16 @@ def _vector_only(store, llm, kb_ids, qvs, filters, norm_q, disease,
                 chunk_index=item["chunk_index"], text=item["text"],
                 kb_id=item["kb_id"], similarity=round(sim, 4),
                 semantic=round(item["semantic"], 4), lexical=round(lex, 4),
-                title_hit=title_hit, score=round(score, 4),
+                title_hit=title_hit, heading=item.get("heading", ""),
+                score=round(score, 4),
             )
         )
     hits.sort(key=lambda h: -h.score)
-    return [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit][:top_k]
+    gated = [h for h in hits if h.semantic >= 0.30 or h.lexical >= 0.15 or h.title_hit]
+    pool = gated[: cfg.get("RERANK_TOP_K", 10)]
+    return _dedup_and_rerank(pool, top_k=top_k,
+                              lambda_=cfg.get("MMR_LAMBDA", 0.6),
+                              max_per_doc=cfg.get("MAX_CHUNKS_PER_DOC", 2))
 
 
 def __cos(a, b):
@@ -320,6 +383,7 @@ def build_citations(chunks: list[ChunkHit]) -> list[dict]:
             "chunk_index": c.chunk_index,
             "source_text": c.text[:2000],
             "title": c.filename,
+            "heading": c.heading,
             "similarity": round(c.similarity, 4),
         }
         for c in chunks

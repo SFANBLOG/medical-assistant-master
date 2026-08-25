@@ -18,8 +18,9 @@ WORKDIR /build
 COPY requirements.txt .
 RUN python -m venv /opt/venv \
     && . /opt/venv/bin/activate \
-    && pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt gunicorn==22.0.0
+    && pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100 \
+    && pip install --no-cache-dir -r requirements.txt gunicorn==22.0.0 -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100
+
 
 # ---------- 阶段 2：运行时 ----------
 FROM python:3.11-slim-bookworm AS runtime

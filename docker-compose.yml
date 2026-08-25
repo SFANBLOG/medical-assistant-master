@@ -143,10 +143,10 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
-      # 本地向量模型：默认 HF 模型 id（容器内自动从 hf-mirror.com 下载，需网络）。
-      # 如需使用已下载的本地模型，可把 data/models 挂载进容器并设置
-      # OPENAI_EMBED_MODEL=/data/models/bge-base-zh-v1.5（同时 volumes 增加 ./backend/data/models:/data/models:ro）。
-      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-BAAI/bge-base-zh-v1.5}
+      # 本地向量模型：挂载宿主机 backend/data/models 进容器（见下方 volumes），
+      # 使用绝对路径 /data/models/bge-base-zh-v1.5 直接加载，避免运行时联网下载
+      # 失败回退到哈希向量（语义检索质量会严重下降、答案变得杂乱）。
+      OPENAI_EMBED_MODEL: /data/models/bge-base-zh-v1.5
       EMBED_DIM: ${EMBED_DIM:-768}
       CHUNK_SIZE: ${CHUNK_SIZE:-380}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-60}
@@ -156,6 +156,8 @@ services:
       QUERY_EXPAND: ${QUERY_EXPAND:-1}
     volumes:
       - medical_data:/data
+      # 挂载本地向量模型（bge-base-zh-v1.5），使容器内 embedding 直接加载、检索质量稳定
+      - ./backend/data/models:/data/models:ro
     ports:
       - "8010:8010"
     healthcheck:

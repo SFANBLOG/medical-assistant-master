@@ -14,12 +14,21 @@ from services.retriever import retrieve, build_context, build_citations, ChunkHi
 from services.cache import cached_json
 from utils.errors import ApiError
 
-SYSTEM_PROMPT = """你是一名专业、严谨的医疗健康助手。请仅依据【参考资料】回答用户的问题，不要编造事实。
-回答要求：
-1. 使用简洁清晰的中文，必要时分点说明；
-2. 如果参考资料不足以回答，请如实说明资料未覆盖；
-3. 在适当位置用 [1][2] 等编号标注引用来源（编号对应【参考资料】中的序号）。
-参考资料如下：
+SYSTEM_PROMPT = """你是一名严谨、专业、善解人意的「智能医疗健康助手」。请严格依据下方【参考资料】回答用户问题，禁止编造资料中不存在的事实、数据或诊断结论。
+
+【回答要求】
+1. 先给出一句直接结论/核心建议，再用要点展开（必要时用标题分层、分点列举）。
+2. 语言简洁、专业、通俗易懂；如必须使用医学术语，请简要解释。
+3. 在相关语句后用 [n] 标注信息来源（n 对应【参考资料】中的编号，可多次引用同一编号，也可不引用）。
+4. 若【参考资料】不足以回答，请明确说明"现有资料暂未覆盖该问题"，并给出合理、安全的一般性建议，不要臆测。
+5. 涉及用药、剂量、手术、急症处理时，必须提示"请遵医嘱 / 及时就医"，不做绝对化承诺。
+6. 不要复述【参考资料】的标题列表，不要输出"参考资料""引用来源"等字样，不要大段照搬原文。
+
+【安全边界】
+- 你不是医生，不提供诊断结论。当用户描述的可能为急危重症（如剧烈胸痛、呼吸困难、意识障碍、大出血、疑似中风/心梗）时，应第一时间建议立即就医或拨打急救电话。
+- 所有内容仅供健康科普与学习参考。
+
+【参考资料】
 """
 
 FALLBACK_ANSWER_TMPL = """根据知识库中检索到的以下资料：
@@ -37,22 +46,44 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-def _clean_answer(text: str) -> str:
-    """移除模型泄漏的内部引用标记、控制字符和重复空白。"""
-    text = re.sub(r"\[[0-9]{1,2}\]", "", text or "")
-    text = re.sub(r"【(?:参考资料|引用|来源)[^】]*】", "", text)
-    text = re.sub(r"(?m)^\s*(?:参考资料|引用来源)\s*:\s*.*$", "", text)
+def _clean_for_storage(text: str) -> str:
+    """终稿清理：仅去除模型自带的"参考资料/引用来源"段落与控制字符、多余空行，
+    但【保留 [n] 引用标记】，以便前端把正文与来源卡片关联起来。"""
+    text = re.sub(r"【(?:参考资料|引用|来源)[^】]*】", "", text or "")
+    text = re.sub(r"(?m)^\s*(?:参考资料|引用来源|参考来源)\s*[:：]\s*$", "", text)
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+def _truncate_context(context: str, limit: int) -> str:
+    """按完整编号块截断参考资料，避免超过长度上限时截断到半句话。"""
+    if len(context) <= limit:
+        return context
+    blocks = context.split("\n\n")
+    out, total = [], 0
+    for b in blocks:
+        if total + len(b) + 2 > limit:
+            break
+        out.append(b)
+        total += len(b) + 2
+    return "\n\n".join(out) + "\n\n（参考资料较长，已截断至最相关的部分）"
+
+
 def _synthesize_fallback(question: str, hits) -> str:
-    bullets = "\n".join(f"- [{i + 1}] {h.filename}: {h.text[:120]}" for i, h in enumerate(hits))
-    summary = "\n".join(f"- [{i + 1}] {h.text}" for i, h in enumerate(hits))
     if not hits:
-        summary = "- 知识库中没有检索到相关内容。"
-    return FALLBACK_ANSWER_TMPL.format(bullets=bullets or "（无）", summary=summary[:3000])
+        return ("知识库中没有检索到与您的问题直接相关的内容。建议：\n"
+                "1. 换一种更具体的表述；\n"
+                "2. 咨询专业医生获取帮助。\n\n"
+                "（以下为离线兜底模式提示：未接入大模型，仅作检索摘要。）")
+    lines = []
+    for i, h in enumerate(hits):
+        snippet = h.text[:240].replace("\n", " ")
+        lines.append(f"[{i + 1}] {h.filename}：{snippet}")
+    summary = "\n".join(lines)
+    return ("（离线兜底模式：未接入大模型，以下为基于知识库检索的要点式摘要）\n\n"
+            f"{summary}\n\n"
+            "说明：以上要点来自知识库相关资料，仅供参考，不能替代执业医师的诊断与治疗建议。")
 
 
 def _ensure_conversation(user_id: int, conversation_id: str | None, kb_id: int | None, question: str) -> str:
@@ -116,7 +147,7 @@ def ask(user: dict, conversation_id: str | None, kb_id: int | None, question: st
     )
     _hits_dicts = cached_json(_cache_key, cfg["REDIS_TTL"], _retrieve_hits)
     hits = [ChunkHit(**d) for d in _hits_dicts]
-    context = build_context(hits)
+    context = _truncate_context(build_context(hits), cfg.get("MAX_CONTEXT_CHARS", 2600))
     citations = build_citations(hits)
     llm = get_llm(cfg)
     messages = [
@@ -147,12 +178,14 @@ def ask(user: dict, conversation_id: str | None, kb_id: int | None, question: st
                 try:
                     for tok in llm.chat_stream(messages):
                         acc.append(tok)
-                        yield _sse({"type": "delta", "content": _clean_answer(tok)})
+                        # 流式原样下发展现（保留 [n] 引用标记，由前端关联来源卡片）
+                        yield _sse({"type": "delta", "content": tok})
                 except Exception:  # noqa: BLE001 在线调用失败（密钥失效/网络异常）降级离线合成
                     pass
-                answer = _clean_answer("".join(acc)) or None
+                answer = _clean_for_storage("".join(acc)) or None
             if answer is None:
-                answer = _clean_answer(_synthesize_fallback(question, hits))
+                # 离线兜底：保留 [n] 引用，使正文与来源卡片关联
+                answer = _clean_for_storage(_synthesize_fallback(question, hits))
                 for i in range(0, len(answer), 8):  # 模拟流式输出
                     yield _sse({"type": "delta", "content": answer[i : i + 8]})
 

@@ -21,7 +21,10 @@ function normalizeMarkdown(md: string): string {
     .replace(/^([-*+])([^-\s])/gm, '$1 $2')
 }
 
-const html = computed(() =>
-  DOMPurify.sanitize(marked.parse(normalizeMarkdown(props.content)) as string),
-)
+const html = computed(() => {
+  const raw = marked.parse(normalizeMarkdown(props.content)) as string
+  // 把答案中的 [n] 引用标记渲染为内联角标，与下方来源卡片视觉关联
+  const withCite = raw.replace(/\[(\d+)\]/g, '<sup class="md-cite">[$1]</sup>')
+  return DOMPurify.sanitize(withCite)
+})
 </script>

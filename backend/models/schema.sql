@@ -2,8 +2,7 @@
 CREATE DATABASE IF NOT EXISTS medical_assistant_master DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE medical_assistant_master;
 
-CREATE TABLE IF NOT EXISTS users
-(
+CREATE TABLE IF NOT EXISTS users (
     id            INT PRIMARY KEY AUTO_INCREMENT,
     username      VARCHAR(128) UNIQUE NOT NULL,
     password_hash TEXT                NOT NULL,
@@ -14,8 +13,7 @@ CREATE TABLE IF NOT EXISTS users
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS knowledge_bases
-(
+CREATE TABLE IF NOT EXISTS knowledge_bases (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     owner_id    INT          NULL,
     name        VARCHAR(255) NOT NULL,
@@ -27,8 +25,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS documents
-(
+CREATE TABLE IF NOT EXISTS documents (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     kb_id       INT          NOT NULL,
     filename    VARCHAR(255) NOT NULL,
@@ -38,14 +35,14 @@ CREATE TABLE IF NOT EXISTS documents
     chunk_count INT          NOT NULL DEFAULT 0,
     status      VARCHAR(16)  NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'failed')),
     error       TEXT,
+    indexed_at  DATETIME     NULL,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_doc_kb FOREIGN KEY (kb_id) REFERENCES knowledge_bases (id) ON DELETE CASCADE
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS conversations
-(
+CREATE TABLE IF NOT EXISTS conversations (
     id         VARCHAR(36) PRIMARY KEY,
     user_id    INT          NOT NULL,
     kb_id      INT          NULL,
@@ -58,8 +55,7 @@ CREATE TABLE IF NOT EXISTS conversations
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS messages
-(
+CREATE TABLE IF NOT EXISTS messages (
     id              INT PRIMARY KEY AUTO_INCREMENT,
     conversation_id VARCHAR(36) NOT NULL,
     role            VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')),
@@ -69,10 +65,18 @@ CREATE TABLE IF NOT EXISTS messages
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_messages_conv ON messages (conversation_id);
 
-CREATE TABLE IF NOT EXISTS citations
-(
+-- 安全创建索引：兼容MySQL5.7/8.0，不存在才创建
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND INDEX_NAME='idx_messages_conv'),
+    'CREATE INDEX idx_messages_conv ON messages(conversation_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS citations (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     message_id  INT NOT NULL,
     document_id INT NOT NULL,
@@ -85,13 +89,37 @@ CREATE TABLE IF NOT EXISTS citations
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_citations_msg ON citations (message_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='citations' AND INDEX_NAME='idx_citations_msg'),
+    'CREATE INDEX idx_citations_msg ON citations(message_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='documents' AND INDEX_NAME='idx_doc_kb_status'),
+    'CREATE INDEX idx_doc_kb_status ON documents(kb_id, status);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='citations' AND INDEX_NAME='idx_citations_doc'),
+    'CREATE INDEX idx_citations_doc ON citations(document_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ===== 患者健康档案 / 医护工作数据 =====
-
 -- 住院信息
-CREATE TABLE IF NOT EXISTS hospitalizations
-(
+CREATE TABLE IF NOT EXISTS hospitalizations (
     id             INT PRIMARY KEY AUTO_INCREMENT,
     patient_id     INT            NOT NULL,
     admit_date     DATETIME       NOT NULL,
@@ -109,11 +137,18 @@ CREATE TABLE IF NOT EXISTS hospitalizations
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_hosp_patient ON hospitalizations (patient_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='hospitalizations' AND INDEX_NAME='idx_hosp_patient'),
+    'CREATE INDEX idx_hosp_patient ON hospitalizations(patient_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 消费明细（挂号/检查/检验/药品/住院等）
-CREATE TABLE IF NOT EXISTS bills
-(
+CREATE TABLE IF NOT EXISTS bills (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     patient_id  INT                 NOT NULL,
     bill_no     VARCHAR(128) UNIQUE NOT NULL,
@@ -126,11 +161,18 @@ CREATE TABLE IF NOT EXISTS bills
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_bills_patient ON bills (patient_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bills' AND INDEX_NAME='idx_bills_patient'),
+    'CREATE INDEX idx_bills_patient ON bills(patient_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 门诊预约挂号
-CREATE TABLE IF NOT EXISTS appointments
-(
+CREATE TABLE IF NOT EXISTS appointments (
     id         INT PRIMARY KEY AUTO_INCREMENT,
     patient_id INT            NOT NULL,
     doctor_id  INT            NULL,
@@ -146,11 +188,18 @@ CREATE TABLE IF NOT EXISTS appointments
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_appt_patient ON appointments (patient_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='appointments' AND INDEX_NAME='idx_appt_patient'),
+    'CREATE INDEX idx_appt_patient ON appointments(patient_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 护理记录
-CREATE TABLE IF NOT EXISTS nursing_records
-(
+CREATE TABLE IF NOT EXISTS nursing_records (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     patient_id  INT         NOT NULL,
     nurse_id    INT         NOT NULL,
@@ -162,11 +211,18 @@ CREATE TABLE IF NOT EXISTS nursing_records
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_nursing_patient ON nursing_records (patient_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nursing_records' AND INDEX_NAME='idx_nursing_patient'),
+    'CREATE INDEX idx_nursing_patient ON nursing_records(patient_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 医护排班
-CREATE TABLE IF NOT EXISTS schedules
-(
+CREATE TABLE IF NOT EXISTS schedules (
     id         INT PRIMARY KEY AUTO_INCREMENT,
     staff_id   INT         NOT NULL,
     work_date  DATE        NOT NULL,
@@ -178,4 +234,12 @@ CREATE TABLE IF NOT EXISTS schedules
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
-CREATE INDEX idx_schedule_staff ON schedules (staff_id);
+
+SET @sql := IF(
+    NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='schedules' AND INDEX_NAME='idx_schedule_staff'),
+    'CREATE INDEX idx_schedule_staff ON schedules(staff_id);',
+    'SELECT ''index exists'';'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

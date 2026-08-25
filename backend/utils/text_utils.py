@@ -379,3 +379,75 @@ def chunk_text(text: str, size: int = 500, overlap: int = 50) -> list[str]:
         chunks = out
 
     return [c for c in chunks if c.strip()]
+
+
+# 文档标题（Markdown # 风格）正则
+HEADING_RE = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _split_recursive(text: str, size: int) -> list[str]:
+    """递归字符级切分（段落 -> 行 -> 句 -> 定长），返回长度 <= size 的片段列表。"""
+    out: list[str] = []
+    for para in [p.strip() for p in PARA_SPLIT_RE.split(text) if p.strip()]:
+        if len(para) <= size:
+            out.append(para)
+            continue
+        for line in [l.strip() for l in LINE_SPLIT_RE.split(para) if l.strip()]:
+            if len(line) <= size:
+                out.append(line)
+                continue
+            for sent in _split_sentences(line):
+                if len(sent) <= size:
+                    out.append(sent)
+                    continue
+                for i in range(0, len(sent), size):
+                    out.append(sent[i: i + size])
+    return out
+
+
+def chunk_document(text: str, size: int = 380, overlap: int = 60) -> list[dict]:
+    """标题感知切分：按章节标题分块、为每块携带所属小节上下文、去除近重复块。
+
+    返回 [{"text": str, "heading": str}, ...]。
+    - heading 前缀（如「（小节：高血压的饮食原则）」）显著提升切片的可检索性与
+      LLM 对资料归属的理解，避免把不同章节内容混为一谈导致回答杂乱。
+    - 末尾对完全相同/高度重叠的块去重，避免同一段话被多次喂给大模型。
+    """
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return []
+
+    # 按标题切分章节（标题之前的正文视为无名章节）
+    sections: list[tuple[str, str]] = []
+    ms = list(HEADING_RE.finditer(text))
+    if ms and ms[0].start() > 0:
+        pre = text[: ms[0].start()].strip()
+        if pre:
+            sections.append(("", pre))
+    for i, m in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        body = text[m.end(): end].strip()
+        if body:
+            sections.append((m.group(2).strip(), body))
+    if not sections:
+        sections = [("", text)]
+
+    # 章节内递归切到接近 size，并在「同节内」做内容重叠（避免跨小节混淆正文）
+    out: list[dict] = []
+    seen: set[str] = set()
+    for heading, body in sections:
+        sec_pieces = _split_recursive(body, size)
+        if overlap > 0 and len(sec_pieces) > 1:
+            merged = [sec_pieces[0]]
+            for p in sec_pieces[1:]:
+                merged.append((merged[-1][-overlap:] + p).strip())
+            sec_pieces = merged
+        for p in sec_pieces:
+            if not p or p in seen:
+                continue
+            seen.add(p)  # 按正文去重（heading 前缀不参与比较）
+            if heading:
+                out.append({"text": f"（小节：{heading}）\n{p}", "heading": heading})
+            else:
+                out.append({"text": p, "heading": ""})
+    return out

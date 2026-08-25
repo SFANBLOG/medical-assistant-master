@@ -11,6 +11,7 @@ LLM 提供者：
 - 否则 -> OfflineFallbackLLM（确定性哈希向量 + 摘要式回答）。
 """
 import logging
+import socket
 import threading
 from typing import Optional
 
@@ -18,6 +19,20 @@ from services.llm import LLMProvider, OfflineFallbackLLM, OpenAICompatLLM
 from services.vector_store import MilvusStore, MilvusUnavailable, NumpyStore
 
 logger = logging.getLogger(__name__)
+
+
+def _milvus_reachable(host: str, port: int, timeout: float = 1.0) -> bool:
+    """在真正实例化 MilvusClient 之前做一次轻量 TCP 探活。
+
+    - 端口未监听（如本地未启动 docker、或未部署 Milvus）-> 直接返回 False，
+      避免构造 MilvusClient 时抛出 <MilvusException> 之类的原始异常污染控制台。
+    - 仅当端口确实可达时才尝试连接，保证本地开发零噪音、Docker 内部正常走 Milvus。
+    """
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 _llm: Optional[LLMProvider] = None
 _llm_lock = threading.Lock()
@@ -50,19 +65,34 @@ def get_vector_store(cfg):
 
         # 1) Milvus（用户首选）
         if cfg.get("MILVUS_ENABLE", "1") not in ("0", "false", "False"):
-            try:
-                _store = MilvusStore(
-                    host=cfg.get("MILVUS_HOST", "127.0.0.1"),
-                    port=int(cfg.get("MILVUS_PORT", "19530")),
-                    dim=cfg["EMBED_DIM"],
-                    db_name=cfg.get("MILVUS_DB", "default"),
-                    collection=cfg.get("MILVUS_COLLECTION"),
-                    min_similarity=float(cfg.get("MIN_SIMILARITY", "0.3")),
+            host = cfg.get("MILVUS_HOST", "127.0.0.1")
+            port = int(cfg.get("MILVUS_PORT", "19530"))
+            # 先轻量探活：端口不可达（本地未启动 docker / 未部署 Milvus）时，
+            # 直接静默降级，不打印任何异常，控制台保持干净。
+            if _milvus_reachable(host, port):
+                try:
+                    _store = MilvusStore(
+                        host=host,
+                        port=port,
+                        dim=cfg["EMBED_DIM"],
+                        db_name=cfg.get("MILVUS_DB", "default"),
+                        collection=cfg.get("MILVUS_COLLECTION"),
+                        min_similarity=float(cfg.get("MIN_SIMILARITY", "0.3")),
+                    )
+                    logger.info("向量存储：Milvus（MilvusStore）")
+                    return _store
+                except MilvusUnavailable:
+                    # 端口可达但握手/鉴权失败：降级一次并给出友好提示，不暴露原始异常
+                    logger.warning(
+                        "Milvus 已可达但初始化失败，已降级到本地 NumpyStore（请检查 Milvus 版本/集合维度）"
+                    )
+                except Exception as exc:  # noqa: BLE001 其它初始化异常统一兜底
+                    logger.warning("Milvus 初始化异常，已降级到本地 NumpyStore：%s", type(exc).__name__)
+            else:
+                logger.info(
+                    "未检测到 Milvus 服务（%s:%s），已自动降级到本地 NumpyStore（本地开发模式，向量持久化于 VECTOR_DIR）",
+                    host, port,
                 )
-                logger.info("向量存储：Milvus（MilvusStore）")
-                return _store
-            except MilvusUnavailable as e:
-                logger.warning(f"Milvus 不可用，降级 NumpyStore：{e}")
 
         # 2) 纯 Python 兜底
         _store = NumpyStore(

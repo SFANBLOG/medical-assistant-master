@@ -2,11 +2,13 @@
 import json
 import os
 
+# 模块级基础目录：无论 dotenv 是否可用都必须存在（_resolve_embed_model 依赖）
+_BASE = os.path.dirname(os.path.abspath(__file__))
+
 # 加载项目根目录或 backend/ 下的 .env（不覆盖已存在的环境变量，Docker 注入优先）
 try:
     from dotenv import load_dotenv
 
-    _BASE = os.path.dirname(os.path.abspath(__file__))
     for _p in (os.path.join(os.path.dirname(_BASE), ".env"), os.path.join(_BASE, ".env")):
         if os.path.exists(_p):
             load_dotenv(_p)
@@ -58,27 +60,34 @@ class Config:
     def _resolve_embed_model(name: str) -> str:
         """把配置的向量模型解析为可直接加载的值（本地目录绝对路径 / HF 模型 id）。
 
-        关键防护：配置的本地模型路径不存在时（如手误把 bge-base 写成 bge-small），
-        不再静默回退到哈希向量导致检索分数极低，而是自动改用 data/models/ 下已有的
-        任一本地模型，并打印告警。
+        解析优先级（确保项目自带的 data/models 权重一定被用到，而不是去 HuggingFace 下载）：
+        1. 已是绝对路径 / 相对路径且对应真实存在的本地目录 -> 直接用；
+        2. 在 data/models/ 下按名称匹配（支持 HF id 的最后一段，如
+           "BAAI/bge-base-zh-v1.5" -> "data/models/bge-base-zh-v1.5"），命中即用本地模型；
+        3. 无本地模型时保留原值（HF id 将尝试下载；下载失败自动回退哈希向量兜底）。
         """
-        if not name or os.path.isabs(name) or name.startswith(("http", "BAAI/", "sentence-transformers/")):
+        if not name:
             return name
-        candidate = os.path.join(_BASE, name)
-        if os.path.isdir(candidate):
-            return os.path.abspath(candidate)
+        # 1) 已存在的本地目录（绝对或相对）
+        if os.path.isdir(name):
+            return os.path.abspath(name)
+        rel = os.path.join(_BASE, name)
+        if os.path.isdir(rel):
+            return os.path.abspath(rel)
+        # 2) 在 data/models 下按名称/片段匹配（最关键：让本地权重优先于远程下载）
         models_dir = os.path.join(_BASE, "data", "models")
         if os.path.isdir(models_dir):
-            found = [
-                d for d in sorted(os.listdir(models_dir))
-                if os.path.isdir(os.path.join(models_dir, d))
-            ]
-            if found:
-                print(f"[config] 警告：配置的向量模型 {name!r} 不存在，"
-                      f"自动改用本地模型 {found[0]!r}（如需换模型请修正 .env 的 OPENAI_EMBED_MODEL）")
-                return os.path.abspath(os.path.join(models_dir, found[0]))
-        print(f"[config] 警告：向量模型 {name!r} 不可用（本地目录不存在且非 HF id），"
-              f"将回退哈希向量，检索相似度分数会显著偏低。")
+            basename = name.split("/")[-1]
+            prefix = basename.split("-")[0]
+            for d in sorted(os.listdir(models_dir)):
+                full = os.path.join(models_dir, d)
+                if not os.path.isdir(full):
+                    continue
+                if d == name or d == basename or d == name.split("/")[-1] \
+                        or d.startswith(prefix) or basename.startswith(d):
+                    print(f"[config] 使用本地向量模型：{full}（依据配置 {name!r}）")
+                    return os.path.abspath(full)
+        # 3) 无本地模型：保留原值（HF id 尝试下载；失败自动哈希兜底）
         return name
 
     OPENAI_EMBED_MODEL = _resolve_embed_model(_EMBED_MODEL)
@@ -122,6 +131,16 @@ class Config:
     TOP_K = int(os.environ.get("TOP_K", "6"))
     # 召回相似度下限（cosine 相似度，0~1）：低于该值视为无关文档，不进入回答上下文。
     MIN_SIMILARITY = float(os.environ.get("MIN_SIMILARITY", "0.30"))
+    # 重排候选数：先召回 RERANK_TOP_K 个候选，再经 MMR 重排/去重后取 TOP_K 送入 LLM，
+    # 候选更充分时重排质量更高（默认 10）。
+    RERANK_TOP_K = int(os.environ.get("RERANK_TOP_K", "10"))
+    # MMR（最大边际相关）权衡系数 lambda：1=纯相关性、0=纯多样性。
+    # 取 0.6 兼顾"答得准"与"覆盖多个相关方面、避免同一段话重复出现"。
+    MMR_LAMBDA = float(os.environ.get("MMR_LAMBDA", "0.6"))
+    # 送入提示词的参考资料总长度上限（字符），防止上下文过长稀释注意力、产生冗长杂乱回答。
+    MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS", "2600"))
+    # 单文档最多采用的切片数（重排后），避免一个文档霸占全部上下文。
+    MAX_CHUNKS_PER_DOC = int(os.environ.get("MAX_CHUNKS_PER_DOC", "2"))
     # 检索提问指令前缀：bge-*-zh-v1.5 默认不加（官方推荐，实测分数更高）。
     # 若使用 bge-large-zh（非 v1.5）可设为：为这个句子生成表示以用于检索相关文章：
     QUERY_PREFIX = os.environ.get("QUERY_PREFIX", "")
@@ -146,7 +165,12 @@ class Config:
 
     # ---- 首启自动播种演示数据 ----
     AUTO_SEED = os.environ.get("AUTO_SEED", "1") == "1"
+    # 知识库文档（疾病示例文档）是否随首启自动播种入库。
+    # 默认 0：首启只播种用户/业务数据，知识库保持为空，由管理员/医生首次登录后清零并按需上传。
+    # 设为 1：首启自动把 backend/data/kb_docs_src 下的示例文档向量化入库。
+    SEED_KB_DOCS = os.environ.get("SEED_KB_DOCS", "0") == "1"
     print(f"API_KEY: {OPENAI_API_KEY[:8]}...{OPENAI_API_KEY[-4:] if OPENAI_API_KEY else ''}")
     print("EMBED_MODEL:", OPENAI_EMBED_MODEL)
     print("BASE_URL:", OPENAI_BASE_URL)
-    print("VECTOR_STORE: Milvus" if MILVUS_ENABLE not in ("0", "false", "False") else "VECTOR_STORE: NumpyStore")
+    # 注：实际向量库在首次请求时按可达性自动选择 Milvus / NumpyStore，此处仅提示首选
+    print("VECTOR_STORE: Milvus(首选，不可用时自动降级 NumpyStore)")

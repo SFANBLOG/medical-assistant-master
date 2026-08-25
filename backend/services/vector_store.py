@@ -73,6 +73,12 @@ class NumpyStore:
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
 
+    def count(self, kb_id: int) -> int:
+        """返回该知识库已入库的切片数量（用于健康检查与空库诊断）。"""
+        with self._lock:
+            arr, _ = self._load(kb_id)
+        return int(len(arr))
+
     @staticmethod
     def _normalize(vecs: np.ndarray) -> np.ndarray:
         """L2 归一化（cosine 检索统一用单位向量，零向量保留原样）。"""
@@ -450,3 +456,16 @@ class MilvusStore:
                 filter_expr=f"kb_id == {int(kb_id)}"
             )
             self._client.flush(collection_name=self.collection_name)
+
+    def count(self, kb_id: int) -> int:
+        """返回该知识库已入库的切片数量（用于健康检查与空库诊断）。"""
+        self._ensure_collection()
+        try:
+            res = self._client.query(
+                collection_name=self.collection_name,
+                filter=f"kb_id == {int(kb_id)}",
+                output_fields=["id"],
+            )
+            return len(res) if res else 0
+        except Exception:  # noqa: BLE001
+            return 0
