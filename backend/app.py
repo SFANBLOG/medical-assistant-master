@@ -47,18 +47,29 @@ def create_app(config=None) -> Flask:
 
 
 def _auto_seed(app) -> None:
-    """首次启动（用户表为空）时自动播种演示数据。"""
+    """自动播种演示数据。
+
+    - 首次启动（users 表为空）：全量播种（账号 / 12 个疾病知识库文档 / 业务数据）。
+    - 重部署（users 表非空）：仅补种可能缺失或向量化失败的知识库文档与向量。
+      目的：避免「MySQL 卷持久化导致不再播种、而向量库为空」的陷阱——
+      之前首次部署时 kb_docs_src 缺失会使知识库成为空壳，重部署直接跳过，
+      最终向量库为空、用户提问检索不到任何内容。
+    """
     try:
+        from seed import seed_all, _seed_disease_kbs, _seed_filler_kbs
+
         with app.app_context():
             conn = get_conn()
             count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            if count > 0:
-                return
-        from seed import seed_all
-
-        with app.app_context():
-            seed_all(app)
-            print("[seed] 演示数据已初始化（患者/医生/护士/群众/管理员 账号，账号密码均为 demo123）")
+            if count == 0:
+                seed_all(app)
+                print("[seed] 演示数据已初始化（患者/医生/护士/群众/管理员 账号，账号密码均为 demo123）")
+            else:
+                # 重部署：幂等补种知识库文档与向量（文档已 ready 则跳过，failed/缺失则重试）
+                cfg = app.config
+                _seed_disease_kbs(cfg)
+                _seed_filler_kbs()
+                print("[seed] 重部署补种：知识库文档与向量已核对（缺失/失败者重新向量化）")
     except Exception:  # noqa: BLE001
         app.logger.exception("自动播种失败（可稍后手动执行 python seed.py）")
 

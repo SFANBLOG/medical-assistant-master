@@ -107,29 +107,51 @@ def _create_kb_if_missing(name: str, owner_id, visibility: str = "private",
 
 def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str,
                         visibility: str, cfg) -> None:
-    """幂等写入文档文件并向量化入库（落在 uploads/<知识库>/公开|私有/ 目录）。"""
+    """幂等写入文档文件并向量化入库（落在 uploads/<知识库>/公开|私有/ 目录）。
+
+    幂等规则：
+    - 同一 (kb_id, filename) 已存在且 status='ready' -> 直接跳过（避免重复向量化）。
+    - 不存在 -> 新建文档记录并向量化。
+    - 已存在但 status='failed'/'processing'（例如先前 Milvus 不可用、远程 embedding 失败）
+      -> 清理可能残留的旧向量后重新向量化，确保重部署后向量库不为空、问答有答案。
+    """
     conn = get_conn()
-    exists = conn.execute(
-        "SELECT 1 FROM documents WHERE kb_id=? AND filename=?", (kb_id, filename)
+    row = conn.execute(
+        "SELECT id, status, file_path FROM documents WHERE kb_id=? AND filename=?",
+        (kb_id, filename),
     ).fetchone()
-    if exists:
+    if row and row["status"] == "ready":
         return
     sub_dir = PUBLIC_DIR if visibility == "public" else PRIVATE_DIR
     folder = safe_folder_name(kb_name, str(kb_id))
     rel_dir = os.path.join(cfg["UPLOAD_DIR"], folder, sub_dir)
     os.makedirs(rel_dir, exist_ok=True)
-    rel_path = os.path.join(folder, sub_dir, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
-    abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
-    with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    cur = conn.execute(
-        """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
-           VALUES (?, ?, ?, ?, ?, 'processing')""",
-        (kb_id, filename, rel_path, os.path.splitext(filename)[1].lstrip("."), visibility),
-    )
-    conn.commit()
-    process_document(cur.lastrowid, kb_id, abs_path, filename, visibility)
+    if row is None:
+        rel_path = os.path.join(folder, sub_dir, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
+        abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        cur = conn.execute(
+            """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
+               VALUES (?, ?, ?, ?, ?, 'processing')""",
+            (kb_id, filename, rel_path, os.path.splitext(filename)[1].lstrip("."), visibility),
+        )
+        conn.commit()
+        doc_id = cur.lastrowid
+    else:
+        doc_id = row["id"]
+        abs_path = os.path.join(cfg["UPLOAD_DIR"], row["file_path"])
+        # 文件可能被清理，内容仍在 content 中，补回即可
+        if not os.path.exists(abs_path):
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(content)
+    # 清理可能残留的旧向量（Milvus 部分写入 / NumpyStore 旧切片），避免重复
+    try:
+        from extensions import get_vector_store
+        get_vector_store(cfg).delete_doc(kb_id, doc_id)
+    except Exception:  # noqa: BLE001 向量库尚未就绪时跳过清理，重试时 process_document 会覆盖
+        pass
+    process_document(doc_id, kb_id, abs_path, filename, visibility)
 
 
 # ---------- 用户 ----------
