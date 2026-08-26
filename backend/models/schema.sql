@@ -43,6 +43,59 @@ CREATE TABLE IF NOT EXISTS documents (
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS chunks (
+    id          INT PRIMARY KEY AUTO_INCREMENT,
+    doc_id      INT          NOT NULL,
+    kb_id       INT          NOT NULL,
+    parent_id   INT          NULL,
+    chunk_index INT          NOT NULL,
+    heading     VARCHAR(512) NULL,
+    text        TEXT         NOT NULL,
+    token_count INT          NOT NULL DEFAULT 0,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sub_chunks (
+    id            INT PRIMARY KEY AUTO_INCREMENT,
+    chunk_id      INT          NOT NULL,
+    doc_id        INT          NOT NULL,
+    kb_id         INT          NOT NULL,
+    sub_index     INT          NOT NULL,
+    text          TEXT         NOT NULL,
+    vector_path   VARCHAR(512) NULL,
+    bm25_terms    TEXT         NULL,
+    token_count   INT          NOT NULL DEFAULT 0,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS bm25_terms (
+    id         INT PRIMARY KEY AUTO_INCREMENT,
+    kb_id      INT          NOT NULL,
+    term       VARCHAR(128) NOT NULL,
+    df         INT          NOT NULL DEFAULT 0,
+    cf         INT          NOT NULL DEFAULT 0,
+    updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_bm25_kb_term (kb_id, term)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS chunk_vectors (
+    id           INT PRIMARY KEY AUTO_INCREMENT,
+    sub_chunk_id INT          NOT NULL,
+    doc_id       INT          NOT NULL,
+    kb_id        INT          NOT NULL,
+    store_type   VARCHAR(32)  NOT NULL DEFAULT 'numpy',
+    store_key    VARCHAR(128) NOT NULL,
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS conversations (
     id         VARCHAR(36) PRIMARY KEY,
     user_id    INT          NOT NULL,

@@ -181,6 +181,101 @@ def _ensure_first_login_done(conn) -> None:
     conn.commit()
 
 
+def _ensure_chunk_columns(conn) -> None:
+    """兼容旧库：为 chunks 表补充 parent_id、heading、text 列（父子块切分所需）。"""
+    if isinstance(conn, MysqlConn):
+        for col, ddl in (
+            ("parent_id", "ALTER TABLE `chunks` ADD COLUMN `parent_id` INT UNSIGNED NULL COMMENT '父块ID（根块为NULL）'"),
+            ("heading", "ALTER TABLE `chunks` ADD COLUMN `heading` VARCHAR(512) NULL COMMENT '所属章节标题'"),
+            ("text", "ALTER TABLE `chunks` ADD COLUMN `text` TEXT NULL COMMENT '块文本'"),
+        ):
+            rows = conn.execute(f"SHOW COLUMNS FROM `chunks` LIKE '{col}'").fetchall()
+            if not rows:
+                conn.execute(ddl)
+    else:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+        for col, ddl in (
+            ("parent_id", "ALTER TABLE chunks ADD COLUMN parent_id INTEGER"),
+            ("heading", "ALTER TABLE chunks ADD COLUMN heading TEXT"),
+            ("text", "ALTER TABLE chunks ADD COLUMN text TEXT"),
+        ):
+            if col not in cols:
+                conn.execute(ddl)
+    conn.commit()
+
+
+def _ensure_chunk_tables(conn) -> None:
+    """兼容旧库：创建父块/子块/BM25/向量元数据表。"""
+    if isinstance(conn, MysqlConn):
+        tables = ["chunks", "sub_chunks", "bm25_terms", "chunk_vectors"]
+        for t in tables:
+            rows = conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?",
+                (t,)
+            ).fetchall()
+            if not rows:
+                conn.executescript(open(MYSQL_SCHEMA_PATH, encoding="utf-8").read())
+                return
+    else:
+        for t in ("chunks", "sub_chunks", "bm25_terms", "chunk_vectors"):
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (t,)
+            ).fetchone()
+            if not exists:
+                # SQLite 下 schema.sql 已是 MySQL 语法，直接用会失败；这里创建简化版
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS chunks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        doc_id INTEGER NOT NULL,
+                        kb_id INTEGER NOT NULL,
+                        parent_id INTEGER,
+                        chunk_index INTEGER NOT NULL,
+                        heading TEXT,
+                        text TEXT NOT NULL,
+                        token_count INTEGER NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )"""
+                )
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS sub_chunks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        chunk_id INTEGER NOT NULL,
+                        doc_id INTEGER NOT NULL,
+                        kb_id INTEGER NOT NULL,
+                        sub_index INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        vector_path TEXT,
+                        bm25_terms TEXT,
+                        token_count INTEGER NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )"""
+                )
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS bm25_terms (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kb_id INTEGER NOT NULL,
+                        term TEXT NOT NULL,
+                        df INTEGER NOT NULL DEFAULT 0,
+                        cf INTEGER NOT NULL DEFAULT 0,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(kb_id, term)
+                    )"""
+                )
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS chunk_vectors (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sub_chunk_id INTEGER NOT NULL,
+                        doc_id INTEGER NOT NULL,
+                        kb_id INTEGER NOT NULL,
+                        store_type TEXT NOT NULL DEFAULT 'numpy',
+                        store_key TEXT NOT NULL,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(sub_chunk_id)
+                    )"""
+                )
+    conn.commit()
+
+
 def init_schema(cfg) -> None:
     """创建数据目录（SQLite）并执行建表 SQL。MySQL 自动建库 + 建表。"""
     if cfg.get("DB_TYPE", "mysql") == "mysql":
@@ -191,6 +286,8 @@ def init_schema(cfg) -> None:
             _ensure_document_visibility(conn)
             _ensure_indexed_at(conn)
             _ensure_first_login_done(conn)
+            _ensure_chunk_tables(conn)
+            _ensure_chunk_columns(conn)
         return
     os.makedirs(cfg["DATA_DIR"], exist_ok=True)
     os.makedirs(cfg["UPLOAD_DIR"], exist_ok=True)
@@ -201,6 +298,8 @@ def init_schema(cfg) -> None:
         _ensure_document_visibility(conn)
         _ensure_indexed_at(conn)
         _ensure_first_login_done(conn)
+        _ensure_chunk_tables(conn)
+        _ensure_chunk_columns(conn)
 
 
 def get_conn() -> sqlite3.Connection | MysqlConn:

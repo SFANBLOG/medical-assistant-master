@@ -1,16 +1,17 @@
-"""演示数据播种（幂等）：5 种角色演示账号 + 12 个疾病知识库（公开/私有文档） + 各表 ≥50 条业务数据。
+"""演示数据播种（幂等）：5 种角色演示账号 + 12 个疾病知识库（公有/私有文档） + 各表 ≥50 条业务数据。
 
 数据库：MySQL `medical-assistant-master`（或 DB_TYPE=sqlite 时的本地 SQLite）。
 运行：python seed.py 或 python app.py --seed
 
-文档来源：backend/data/kb_docs_src/<知识库>/公开|私有/*.md，
-落盘到 backend/data/uploads/<知识库>/公开|私有/ 并向量化入库。
+文档来源：backend/data/uploads/<疾病类别>/公有|私有/*.md，
+导入时落盘到 backend/data/uploads/<知识库>/公有|私有/ 并向量化入库。
+（文档由 scripts/gen_upload_docs.py 生成，每个类别 20 公有 + 20 私有，互不重复。）
 """
 import os
 import uuid
 from datetime import date, timedelta
 
-from data.kb_docs import DISEASE_KBS, KB_DOCS_SRC_DIR
+from data.kb_docs import DISEASE_KBS, UPLOAD_DOCS_ROOT
 from models.db import get_conn, init_schema
 from services import auth_service
 from services.doc_pipeline import process_document
@@ -123,18 +124,19 @@ def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str,
     ).fetchone()
     if row and row["status"] == "ready":
         return
-    # 上传落盘子目录与运行时上传（kb_service）保持一致：公开 / 私有
+    # 上传落盘子目录与运行时上传（kb_service）保持一致：公有 / 私有
     from services.kb_service import PRIVATE_DIR as KB_PRIVATE_DIR, PUBLIC_DIR as KB_PUBLIC_DIR
 
     sub_dir = KB_PUBLIC_DIR if visibility == "public" else KB_PRIVATE_DIR
     folder = safe_folder_name(kb_name, str(kb_id))
     rel_dir = os.path.join(cfg["UPLOAD_DIR"], folder, sub_dir)
     os.makedirs(rel_dir, exist_ok=True)
+    # 始终以 uuid 命名落盘，保证 file_path 与磁盘实际文件一致（避免陈旧路径导致向量化失败）
+    rel_path = os.path.join(folder, sub_dir, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
+    abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(content)
     if row is None:
-        rel_path = os.path.join(folder, sub_dir, f"seed_{uuid.uuid4().hex[:8]}_{filename}")
-        abs_path = os.path.join(cfg["UPLOAD_DIR"], rel_path)
-        with open(abs_path, "w", encoding="utf-8") as f:
-            f.write(content)
         cur = conn.execute(
             """INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, status)
                VALUES (?, ?, ?, ?, ?, 'processing')""",
@@ -144,11 +146,12 @@ def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str,
         doc_id = cur.lastrowid
     else:
         doc_id = row["id"]
-        abs_path = os.path.join(cfg["UPLOAD_DIR"], row["file_path"])
-        # 文件可能被清理，内容仍在 content 中，补回即可
-        if not os.path.exists(abs_path):
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write(content)
+        # 旧记录的 file_path 可能指向已删除/重命名的文件，这里统一校正为新落盘路径
+        conn.execute(
+            "UPDATE documents SET file_path=?, status='processing' WHERE id=?",
+            (rel_path, doc_id),
+        )
+        conn.commit()
     # 清理可能残留的旧向量（Milvus 部分写入 / NumpyStore 旧切片），避免重复
     try:
         from extensions import get_vector_store
@@ -177,10 +180,14 @@ def _seed_users() -> None:
 
 # ---------- 知识库与文档 ----------
 def _seed_disease_kbs(cfg) -> None:
-    """12 个疾病知识库：公开 10 篇 + 私有 10 篇文档。"""
+    """12 个疾病知识库：每个类别 公有 20 篇 + 私有 20 篇文档。
+
+    文档源：backend/data/uploads/<类别>/公有|私有/*.md
+    （由 scripts/gen_upload_docs.py 生成；首次登录清零后仍可 `python seed.py --kb-docs` 一键导入）。
+    """
     for name, description in DISEASE_KBS.items():
         kb_id, _ = _create_kb_if_missing(name, None, "public", description)
-        src_dir = os.path.join(KB_DOCS_SRC_DIR, name)
+        src_dir = os.path.join(UPLOAD_DOCS_ROOT, name)
         for sub_dir, visibility in ((PUBLIC_DIR, "public"), (PRIVATE_DIR, "private")):
             src_sub = os.path.join(src_dir, sub_dir)
             if not os.path.isdir(src_sub):

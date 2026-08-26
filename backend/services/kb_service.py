@@ -1,12 +1,12 @@
 """知识库与文档服务：角色权限 + 公开/私有 权限模型。
 
-角色权限（依据安医大附属医院 RAG 系统角色划分）：
-- 医生 / 管理员：可创建知识库、上传/管理文档（管理员可管理全部，医生可管理
-  公开知识库及自己创建的私有知识库）；
+角色权限（依据医学院医疗 RAG 系统角色划分）：
+- 管理员 / 医生：可创建知识库（公有或私有）、上传/管理文档。管理员可管理全部
+  知识库，医生可管理公有知识库及自己创建的私有知识库；
 - 患者 / 护士 / 群众：只能基于「公开知识库 + 公开文档」进行查询，不可创建或管理。
 
 文档可见性：
-- 公开文档：存于 uploads/<知识库>/公开/，所有可访问该知识库的用户可见；
+- 公开文档：存于 uploads/<知识库>/公有/，所有可访问该知识库的用户可见；
 - 私有文档：存于 uploads/<知识库>/私有/，仅医生 / 管理员可见（患者/群众/护士
   查询时不会检索到）。
 """
@@ -16,7 +16,7 @@ import uuid
 from models.db import get_conn
 from utils.errors import ApiError
 
-PUBLIC_DIR = "公开"
+PUBLIC_DIR = "公有"
 PRIVATE_DIR = "私有"
 
 
@@ -134,7 +134,7 @@ def create_kb(user: dict, name: str, description: str = "", visibility: str = "p
     if visibility not in ("private", "public"):
         raise ApiError("无效的可见性", 400)
     if visibility == "public" and not can_manage_public(user):
-        raise ApiError("只有医生可将知识库设为公开", 403)
+        raise ApiError("只有医生或管理员可将知识库设为公开", 403)
     name = name.strip()
     if not name:
         raise ApiError("知识库名称不能为空", 400)
@@ -257,7 +257,7 @@ def _visibility_dir(visibility: str) -> str:
 
 
 def add_document(user: dict, kb_id: int, upload_file, visibility: str = "") -> dict:
-    """上传文档：落盘到 uploads/<知识库>/公开|私有/ 目录并向量化入库。
+    """上传文档：落盘到 uploads/<知识库>/公有|私有/ 目录并向量化入库。
 
     处理失败不再抛出 500，而是返回 status='failed' 且带 error 信息的文档行，
     便于前端展示具体原因并允许删除（解决上传出错不可控的问题）。
@@ -289,7 +289,7 @@ def add_document(user: dict, kb_id: int, upload_file, visibility: str = "") -> d
     doc_id = cur.lastrowid
     conn.commit()
 
-    # 落盘：UPLOAD_DIR/<知识库名>/公开|私有/<uuid>_<filename>
+    # 落盘：UPLOAD_DIR/<知识库名>/公有|私有/<uuid>_<filename>
     from utils.file_utils import safe_folder_name
 
     kb_folder = safe_folder_name(kb["name"], str(kb_id))

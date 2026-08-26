@@ -2,8 +2,8 @@
   <el-card>
     <template #header>
       <div style="display: flex; align-items: center; justify-content: space-between">
-        <span>知识库管理</span>
-        <el-button type="primary" @click="createOpen = true"><el-icon><Plus /></el-icon>&nbsp;新建知识库</el-button>
+        <span>{{ pageTitle }}</span>
+        <el-button v-if="canManageKb" type="primary" @click="createOpen = true"><el-icon><Plus /></el-icon>&nbsp;新建知识库</el-button>
       </div>
     </template>
 
@@ -24,10 +24,11 @@
       </el-table-column>
       <el-table-column label="操作" width="210">
         <template #default="{ row }">
-          <el-button size="small" @click="openDocs(row)">
+          <el-button v-if="canManageKb" size="small" @click="openDocs(row)">
             <el-icon><Document /></el-icon>&nbsp;管理文档
           </el-button>
-          <el-button size="small" type="danger" link @click="removeKb(row)">删除</el-button>
+          <el-button v-if="canManageKb" size="small" type="danger" link @click="removeKb(row)">删除</el-button>
+          <span v-if="!canManageKb" style="color: #999; font-size: 12px">—</span>
         </template>
       </el-table-column>
     </el-table>
@@ -42,12 +43,12 @@
           <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="选填" />
         </el-form-item>
         <el-form-item label="可见性">
-          <el-select v-model="createForm.visibility" :disabled="!isDoctor" style="width: 100%">
+          <el-select v-model="createForm.visibility" :disabled="!canCreatePublic" style="width: 100%">
             <el-option value="private" label="私有（仅自己可见）" />
             <el-option value="public" label="公开（所有人可见）" />
           </el-select>
           <p style="font-size: 12px; color: #999; margin: 6px 0 0">
-            {{ isDoctor ? '医生可将知识库设为公开，供所有用户咨询' : '患者身份仅可创建私有知识库' }}
+            {{ canCreatePublic ? '医生和管理员可将知识库设为公开，供所有用户咨询' : '当前身份仅可创建私有知识库' }}
           </p>
         </el-form-item>
       </el-form>
@@ -105,14 +106,17 @@
 </template>
 
 <script setup lang="ts">
-import {onMounted, reactive, ref} from 'vue'
+import {computed, onMounted, reactive, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {kbApi} from '../api/endpoints'
 import {useAuth} from '../stores/auth'
 import type {DocumentItem, KnowledgeBase, Visibility} from '../types'
 
 const auth = useAuth()
-const isDoctor = auth.user?.role === 'doctor'
+const userRole = computed(() => auth.user?.role)
+const canCreatePublic = computed(() => userRole.value === 'doctor' || userRole.value === 'admin')
+const canManageKb = computed(() => userRole.value === 'doctor' || userRole.value === 'admin')
+const pageTitle = computed(() => canManageKb.value ? '知识库管理' : '知识库浏览')
 const kbs = ref<KnowledgeBase[]>([])
 const loading = ref(false)
 const createOpen = ref(false)

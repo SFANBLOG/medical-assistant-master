@@ -1,7 +1,8 @@
-"""系统管理员 API：用户管理、全系统统计。"""
+"""系统管理员 API：用户管理、全系统统计、知识库重索引。"""
 from api.decorators import require_roles
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from services import admin_service
+from services.doc_pipeline import reindex_missing
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -52,3 +53,10 @@ def delete_user(uid: int):
 @require_roles("admin")
 def stats():
     return admin_service.stats()
+
+
+@admin_bp.post("/reindex")
+@require_roles("admin", "doctor")
+def reindex():
+    """对当前知识库中尚未向量化的文档重新切分、生成 bge 向量并写入 Milvus/NumpyStore。"""
+    return reindex_missing(current_app.config)

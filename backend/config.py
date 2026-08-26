@@ -167,7 +167,7 @@ class Config:
     AUTO_SEED = os.environ.get("AUTO_SEED", "1") == "1"
     # 知识库文档（疾病示例文档）是否随首启自动播种入库。
     # 默认 0：首启只播种用户/业务数据，知识库保持为空，由管理员/医生首次登录后清零并按需上传。
-    # 设为 1：首启自动把 backend/data/kb_docs_src 下的示例文档向量化入库。
+    # 设为 1：首启自动把 backend/data/uploads 下各疾病类别的示例文档向量化入库。
     SEED_KB_DOCS = os.environ.get("SEED_KB_DOCS", "0") == "1"
     print(f"API_KEY: {OPENAI_API_KEY[:8]}...{OPENAI_API_KEY[-4:] if OPENAI_API_KEY else ''}")
     print("EMBED_MODEL:", OPENAI_EMBED_MODEL)

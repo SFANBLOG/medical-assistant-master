@@ -54,9 +54,83 @@ CREATE TABLE IF NOT EXISTS `documents`
     KEY `idx_doc_kb` (`kb_id`),
     KEY `idx_doc_visibility` (`visibility`),
     KEY `idx_doc_kb_status` (`kb_id`, `status`)
+) ENGINE = InnoDB;
+
+-- 父块表：按文档标题/章节生成的大段语义块，用于保留完整上下文
+CREATE TABLE IF NOT EXISTS `chunks`
+(
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `doc_id`      INT UNSIGNED NOT NULL COMMENT '所属文档',
+    `kb_id`       INT UNSIGNED NOT NULL COMMENT '所属知识库',
+    `parent_id`   INT UNSIGNED NULL COMMENT '父块ID（根块为NULL）',
+    `chunk_index` INT          NOT NULL COMMENT '块在文档内的序号',
+    `heading`     VARCHAR(512) NULL COMMENT '所属章节标题',
+    `text`        TEXT         NOT NULL COMMENT '块文本',
+    `token_count` INT          NOT NULL DEFAULT 0,
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_chunk_doc` (`doc_id`),
+    KEY `idx_chunk_kb` (`kb_id`),
+    KEY `idx_chunk_parent` (`parent_id`)
+    -- 注：外键在 MySQL 某些版本/字符集组合下易出现类型不兼容，由应用层保证引用完整性
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci COMMENT ='知识库文档表';
+  COLLATE = utf8mb4_unicode_ci COMMENT ='文档父块表';
+
+-- 子块表：从父块进一步切分的检索单元，存 bge 向量路径与 BM25 统计
+CREATE TABLE IF NOT EXISTS `sub_chunks`
+(
+    `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `chunk_id`      INT UNSIGNED NOT NULL COMMENT '所属父块',
+    `doc_id`        INT UNSIGNED NOT NULL,
+    `kb_id`         INT UNSIGNED NOT NULL,
+    `sub_index`     INT          NOT NULL COMMENT '子块在父块内的序号',
+    `text`          TEXT         NOT NULL,
+    `vector_path`   VARCHAR(512) NULL COMMENT '向量文件相对路径（JSON/npy 或 Milvus 已存标记）',
+    `bm25_terms`    JSON         NULL COMMENT 'BM25 词频统计 {term: tf}',
+    `token_count`   INT          NOT NULL DEFAULT 0,
+    `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_sub_chunk` (`chunk_id`),
+    KEY `idx_sub_doc` (`doc_id`),
+    KEY `idx_sub_kb` (`kb_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='文档子块表';
+
+-- BM25 全局词频/文档频率表：按知识库维护，用于快速 BM25 打分
+CREATE TABLE IF NOT EXISTS `bm25_terms`
+(
+    `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `kb_id`    INT UNSIGNED NOT NULL,
+    `term`     VARCHAR(128) NOT NULL,
+    `df`       INT          NOT NULL DEFAULT 0 COMMENT '文档频率（出现该词的子块数）',
+    `cf`       INT          NOT NULL DEFAULT 0 COMMENT '集合频率（总出现次数）',
+    `updated_at` DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_bm25_kb_term` (`kb_id`, `term`),
+    KEY `idx_bm25_kb` (`kb_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='BM25 词频统计表';
+
+-- 向量存储元数据表：记录每个子块在 Milvus / NumpyStore 中的存储状态
+CREATE TABLE IF NOT EXISTS `chunk_vectors`
+(
+    `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `sub_chunk_id` INT UNSIGNED NOT NULL,
+    `doc_id`       INT UNSIGNED NOT NULL,
+    `kb_id`        INT UNSIGNED NOT NULL,
+    `store_type`   VARCHAR(32)  NOT NULL DEFAULT 'numpy' COMMENT 'milvus/numpy',
+    `store_key`    VARCHAR(128) NOT NULL COMMENT 'Milvus id 或 numpy 文件键',
+    `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_vec_sub` (`sub_chunk_id`),
+    KEY `idx_vec_doc` (`doc_id`),
+    KEY `idx_vec_kb` (`kb_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='子块向量元数据表';
 
 -- 咨询会话表
 CREATE TABLE IF NOT EXISTS `conversations`
