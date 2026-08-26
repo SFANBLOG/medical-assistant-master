@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT                NOT NULL,
     role          VARCHAR(32)         NOT NULL CHECK (role IN ('patient', 'doctor', 'nurse', 'public', 'admin')),
     display_name  VARCHAR(128),
+    first_login_done TINYINT NOT NULL DEFAULT 0,
     created_at    DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4

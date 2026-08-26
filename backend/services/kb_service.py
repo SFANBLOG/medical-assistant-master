@@ -180,6 +180,66 @@ def delete_kb(user: dict, kb_id: int) -> None:
     conn.commit()
 
 
+def reset_knowledge_base() -> int:
+    """清空全部知识库内容，回到「零」状态（供管理员/医生初次登录时调用）。
+
+    仅清除知识库相关数据，不影响用户、住院、账单、排班等业务数据：
+    - 删除各知识库在向量库（Milvus / NumpyStore）中的全部切片；
+    - 删除上传的文档实体文件；
+    - 清空 documents / citations / knowledge_bases 记录；
+    - 使检索结果缓存失效。
+
+    返回被清空的知识库数量（便于日志/提示）。
+    """
+    from extensions import get_vector_store
+    from flask import current_app
+    from services.cache import clear_prefix
+
+    cfg = current_app.config
+    conn = get_conn()
+
+    # 1) 先收集待删除的文档实体文件路径（删除行之前，否则丢失路径）
+    file_paths = [r["file_path"] for r in conn.execute("SELECT file_path FROM documents").fetchall()]
+
+    # 2) 删除向量库集合（逐库 delete_collection，兼容 Milvus / NumpyStore）
+    kb_ids = [r["id"] for r in conn.execute("SELECT id FROM knowledge_bases").fetchall()]
+    try:
+        store = get_vector_store(cfg)
+        for kb_id in kb_ids:
+            try:
+                store.delete_collection(kb_id)
+            except Exception:  # noqa: BLE001 集合可能不存在
+                pass
+    except Exception:  # noqa: BLE001 向量库不可用时忽略，继续清库
+        pass
+
+    # 3) 删除上传的文档实体文件
+    upload_dir = cfg.get("UPLOAD_DIR", "")
+    for rel in file_paths:
+        if not rel:
+            continue
+        abs_path = os.path.join(upload_dir, rel)
+        try:
+            if os.path.isfile(abs_path):
+                os.remove(abs_path)
+        except OSError:
+            pass
+
+    # 4) 清空数据库记录（citations 依赖 documents，先清 citations）
+    conn.execute("DELETE FROM citations")
+    conn.execute("DELETE FROM documents")
+    conn.execute("DELETE FROM knowledge_bases")
+    conn.commit()
+
+    # 5) 使检索缓存失效
+    try:
+        clear_prefix("rag:hits:")
+    except Exception:  # noqa: BLE001
+        pass
+
+    return len(kb_ids)
+
+
 def list_documents(user: dict, kb_id: int) -> list[dict]:
     kb = get_kb(user, kb_id)  # 权限校验
     conn = get_conn()

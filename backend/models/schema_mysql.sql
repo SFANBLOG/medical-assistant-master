@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS `users`
     `password_hash` VARCHAR(255) NOT NULL COMMENT '密码哈希',
     `role`          VARCHAR(16)  NOT NULL COMMENT 'patient/doctor/nurse/public/admin',
     `display_name`  VARCHAR(64)  NULL,
+    `first_login_done` TINYINT   NOT NULL DEFAULT 0 COMMENT '是否已初次登录（用于管理员/医生首登清空知识库）',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_users_username` (`username`),

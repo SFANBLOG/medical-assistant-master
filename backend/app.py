@@ -65,11 +65,14 @@ def _auto_seed(app) -> None:
                 seed_all(app)
                 print("[seed] 演示数据已初始化（患者/医生/护士/群众/管理员 账号，账号密码均为 demo123）")
             else:
-                # 重部署：幂等补种知识库文档与向量（文档已 ready 则跳过，failed/缺失则重试）
+                # 重部署：仅在显式开启 SEED_KB_DOCS 时补种知识库文档与向量
                 cfg = app.config
-                _seed_disease_kbs(cfg)
-                _seed_filler_kbs()
-                print("[seed] 重部署补种：知识库文档与向量已核对（缺失/失败者重新向量化）")
+                if cfg.get("SEED_KB_DOCS", False):
+                    _seed_disease_kbs(cfg)
+                    _seed_filler_kbs()
+                    print("[seed] 重部署补种：知识库文档与向量已核对（缺失/失败者重新向量化）")
+                else:
+                    print("[seed] 重部署：SEED_KB_DOCS=0，跳过知识库文档补种（保持为空，由用户上传）")
     except Exception:  # noqa: BLE001
         app.logger.exception("自动播种失败（可稍后手动执行 python seed.py）")
 
@@ -81,6 +84,6 @@ if __name__ == "__main__":
         from seed import seed_all
 
         with app.app_context():
-            seed_all(app)
+            seed_all(app, force_kb_docs=True)
         print("[seed] 完成")
     app.run(host="0.0.0.0", port=8010, debug=True, use_reloader=False)

@@ -134,6 +134,9 @@ services:
       DATA_DIR: /data
       UPLOAD_DIR: /data/uploads
       VECTOR_DIR: /data/vectors
+      # 知识库示例文档是否随首启自动播种：默认 0（知识库保持空，由管理员/医生首次
+      # 登录后清零并自行上传；如需一键载入示例文档，设为 1 或运行 seed --kb-docs）
+      SEED_KB_DOCS: ${SEED_KB_DOCS:-0}
       # 向量库：连接 docker-compose 内的 Milvus
       MILVUS_ENABLE: ${MILVUS_ENABLE:-1}
       MILVUS_HOST: milvus

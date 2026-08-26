@@ -69,7 +69,8 @@ CONVERSATION_ANSWERS = [
     "应就地固定制动，开放性伤口覆盖止血后尽快送医，勿强行复位。",
 ]
 
-PUBLIC_DIR = "公开"
+# 源文档目录名（与用户约定 data/疾病名/<公有>|<私有> 一致）
+PUBLIC_DIR = "公有"
 PRIVATE_DIR = "私有"
 
 
@@ -122,7 +123,10 @@ def _add_doc_if_missing(kb_id: int, kb_name: str, filename: str, content: str,
     ).fetchone()
     if row and row["status"] == "ready":
         return
-    sub_dir = PUBLIC_DIR if visibility == "public" else PRIVATE_DIR
+    # 上传落盘子目录与运行时上传（kb_service）保持一致：公开 / 私有
+    from services.kb_service import PRIVATE_DIR as KB_PRIVATE_DIR, PUBLIC_DIR as KB_PUBLIC_DIR
+
+    sub_dir = KB_PUBLIC_DIR if visibility == "public" else KB_PRIVATE_DIR
     folder = safe_folder_name(kb_name, str(kb_id))
     rel_dir = os.path.join(cfg["UPLOAD_DIR"], folder, sub_dir)
     os.makedirs(rel_dir, exist_ok=True)
@@ -376,13 +380,23 @@ def _print_summary() -> None:
     print(f"  - 文档可见性：公开 {pub} / 私有 {pri}")
 
 
-def seed_all(app) -> None:
+def seed_all(app, force_kb_docs: bool | None = None) -> None:
+    """演示数据播种（幂等）。
+
+    force_kb_docs:
+      - None  -> 由配置 SEED_KB_DOCS 决定（默认 False，不播种知识库文档）；
+      - True  -> 强制播种知识库文档（示例疾病文档）；
+      - False -> 强制不播种知识库文档。
+    默认不播种知识库文档，使首启后知识库保持为空，由管理员/医生首次登录后清零并自行上传。
+    """
     cfg = app.config
     init_schema(cfg)
     with app.app_context():
         _seed_users()
-        _seed_disease_kbs(cfg)
-        _seed_filler_kbs()
+        seed_kb = force_kb_docs if force_kb_docs is not None else bool(cfg.get("SEED_KB_DOCS", False))
+        if seed_kb:
+            _seed_disease_kbs(cfg)
+            _seed_filler_kbs()
         _seed_conversations()
         _seed_citations()
         _seed_medical_volume()
@@ -390,10 +404,20 @@ def seed_all(app) -> None:
         print(
             "[seed] 演示账号（密码均为 demo123）：patientdemo / doctordemo / nursedemo / publicdemo / admindemo"
         )
+        if not seed_kb:
+            print("[seed] 知识库文档未自动播种（SEED_KB_DOCS=0）。"
+                  "管理员/医生首次登录后知识库将清零，可手动上传，或运行 `python seed.py --kb-docs` 一键导入示例文档。")
 
 
 if __name__ == "__main__":
+    import argparse
+
     from app import app
 
+    parser = argparse.ArgumentParser(description="医智助手演示数据播种")
+    parser.add_argument("--kb-docs", action="store_true",
+                        help="强制播种知识库示例文档（忽略 SEED_KB_DOCS 配置）")
+    args = parser.parse_args()
+
     with app.app_context():
-        seed_all(app)
+        seed_all(app, force_kb_docs=args.kb_docs if args.kb_docs else None)

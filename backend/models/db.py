@@ -168,6 +168,19 @@ def _ensure_indexed_at(conn) -> None:
     conn.commit()
 
 
+def _ensure_first_login_done(conn) -> None:
+    """兼容旧库：为 users 表补充 first_login_done 列（首次登录清空知识库标记）。"""
+    if isinstance(conn, MysqlConn):
+        rows = conn.execute("SHOW COLUMNS FROM `users` LIKE 'first_login_done'").fetchall()
+        if not rows:
+            conn.execute("ALTER TABLE `users` ADD COLUMN `first_login_done` TINYINT NOT NULL DEFAULT 0")
+    else:
+        cols = conn.execute("PRAGMA table_info(users)").fetchall()
+        if not any(c["name"] == "first_login_done" for c in cols):
+            conn.execute("ALTER TABLE users ADD COLUMN first_login_done INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+
+
 def init_schema(cfg) -> None:
     """创建数据目录（SQLite）并执行建表 SQL。MySQL 自动建库 + 建表。"""
     if cfg.get("DB_TYPE", "mysql") == "mysql":
@@ -177,6 +190,7 @@ def init_schema(cfg) -> None:
                 conn.executescript(f.read())
             _ensure_document_visibility(conn)
             _ensure_indexed_at(conn)
+            _ensure_first_login_done(conn)
         return
     os.makedirs(cfg["DATA_DIR"], exist_ok=True)
     os.makedirs(cfg["UPLOAD_DIR"], exist_ok=True)
@@ -186,6 +200,7 @@ def init_schema(cfg) -> None:
             conn.executescript(f.read())
         _ensure_document_visibility(conn)
         _ensure_indexed_at(conn)
+        _ensure_first_login_done(conn)
 
 
 def get_conn() -> sqlite3.Connection | MysqlConn:
