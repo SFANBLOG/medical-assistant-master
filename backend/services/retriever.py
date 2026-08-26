@@ -155,7 +155,7 @@ def _bm25_retrieve(cfg, kb_ids, norm_q: str, top_n: int, allow_private: bool) ->
             (kb_id,),
         ).fetchone()
         n = int(s["n"] or 0)
-        avgdl = (s["tot"] / n) if n else 0
+        avgdl = float(s["tot"] or 0) / n if n else 0.0
         kb_stats[kb_id] = (n, avgdl)
 
     vis = "" if allow_private else "AND d.visibility='public'"

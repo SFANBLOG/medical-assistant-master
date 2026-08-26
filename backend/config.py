@@ -19,7 +19,7 @@ except ImportError:  # 未安装 python-dotenv 时静默跳过
 class Config:
     # ---- 安全 ----
     # ⚠️ 生产务必替换环境变量JWT_SECRET，至少32字节！下面仅本地开发临时示例
-    JWT_SECRET = os.environ.get("JWT_SECRET", "dev-insecure-secret-32bytes-long-key-xxxx")
+    JWT_SECRET = os.environ.get("JWT_SECRET", "93b9c6f957c383f081d0b4c465e2a865a5b424fccc9bd09ec7d0ec01149a85c3")
     JWT_ALGO = "HS256"
     JWT_EXPIRES_HOURS = int(os.environ.get("JWT_EXPIRES_HOURS", "24"))
 
@@ -85,7 +85,7 @@ class Config:
                     continue
                 if d == name or d == basename or d == name.split("/")[-1] \
                         or d.startswith(prefix) or basename.startswith(d):
-                    print(f"[config] 使用本地向量模型：{full}（依据配置 {name!r}）")
+                    print(f"[config] 使用本地向量模型：{full}")
                     return os.path.abspath(full)
         # 3) 无本地模型：保留原值（HF id 尝试下载；失败自动哈希兜底）
         return name
