@@ -21,6 +21,14 @@ from typing import Optional
 _K1 = 1.5
 _B = 0.75
 
+# 高频词过滤阈值：query 中出现在超过该比例文档里的词视为「无区分度」（如 的/患者/疾病），
+# 直接丢弃，避免长文档靠堆砌通用词刷高分数。
+MAX_DF_RATIO = 0.5
+
+# bigram 增益：中文双字词（如 糖尿/尿病/血糖）比单字更具判别力，
+# 在 query 侧适度放大其权重。
+_BIGRAM_BOOST = 1.6
+
 
 def _tokenize(text: str) -> list[str]:
     """中英文混合分词：英文单词 + 中文单字 + 中文 bigram。"""
@@ -129,10 +137,19 @@ class BM25Index:
         if not q_tokens:
             return []
 
-        # 统计 query 词频
+        # 统计 query 词频（丢弃无区分度的高频词）
         q_tf: dict[str, int] = {}
         for t in q_tokens:
             q_tf[t] = q_tf.get(t, 0) + 1
+        if self._N:
+            discriminative = {
+                t: qf
+                for t, qf in q_tf.items()
+                if self._df.get(t, 0) <= MAX_DF_RATIO * self._N
+            }
+            # 若全部被过滤（提问过短/过泛），保留低 df 的前若干个词兜底
+            if discriminative:
+                q_tf = discriminative
 
         # 候选 doc 下标（出现在任一 query 词倒排表中的 doc）
         cand: set[int] = set()
@@ -156,7 +173,9 @@ class BM25Index:
                 if f == 0:
                     continue
                 denom = f + _K1 * (1 - _B + _B * (dl / self._avgdl if self._avgdl else 1.0))
-                score += idf * (f * (_K1 + 1)) / denom
+                # 双字中文词（bigram）判别力更强，适度加权
+                boost = _BIGRAM_BOOST if (len(t) == 2 and "\u4e00" <= t[0] <= "\u9fff") else 1.0
+                score += boost * idf * (f * (_K1 + 1)) / denom
             if score > 0:
                 scores.append((idx, score))
 

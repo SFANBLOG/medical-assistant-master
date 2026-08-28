@@ -25,21 +25,41 @@ from typing import List, Optional
 from backend import config
 
 
+# 中文高频虚词/泛用词：对医学检索无区分度，参与词法重叠会引入噪声。
+_STOPWORDS = {
+    "的", "了", "是", "在", "和", "与", "及", "就", "都", "而", "也", "很",
+    "有", "个", "我", "你", "他", "她", "它", "这", "那", "吗", "呢", "吧",
+    "啊", "哦", "呀", "什么", "怎么", "怎样", "如何", "可以", "需要", "应该",
+    "注意", "患者", "疾病", "问题", "情况", "时候", "因为", "所以", "但是",
+    "如果", "这样", "那样", "一些", "很多", "比较", "非常", "还有", "就是",
+    "请问", "我想", "帮我", "谢谢", "是否", "能否", "应该", "怎么", "为什么",
+}
+
+
 def _extract_keywords(query: str) -> List[str]:
-    """从查询中提取关键词（中文 bigram + 英文单词），用于词法重叠统计。"""
+    """
+    提取有区分度的关键词：中文 bigram 优先，英文单词，过滤虚词。
+    单字中文判别力弱，只在没有 bigram 时作为补充。
+    """
     kws: List[str] = []
     for m in re.findall(r"[a-zA-Z]+", query):
         if len(m) >= 2:
             kws.append(m.lower())
+    bigrams: List[str] = []
     for seg in re.findall(r"[\u4e00-\u9fff]+", query):
         for i in range(len(seg) - 1):
-            kws.append(seg[i : i + 2])
-        for ch in seg:
-            kws.append(ch)
-    return list(set(kws))
+            bigrams.append(seg[i : i + 2])
+    kws.extend(bigrams)
+    # 单字仅作补充（bigram 太少时）
+    if len(bigrams) < 2:
+        for seg in re.findall(r"[\u4e00-\u9fff]+", query):
+            for ch in seg:
+                kws.append(ch)
+    return [k for k in dict.fromkeys(kws) if k not in _STOPWORDS]
 
 
 def _chunk_tokens(text: str) -> set[str]:
+    """chunk 侧 token 集合（中文单字 + bigram + 英文词）。"""
     toks: set[str] = set()
     for m in re.findall(r"[a-zA-Z]+", text):
         if len(m) >= 2:
