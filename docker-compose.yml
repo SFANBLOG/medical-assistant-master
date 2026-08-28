@@ -1,0 +1,123 @@
+# 医智助手 · Docker Compose 部署
+# 前端 Nginx(3000) + 后端 gunicorn(8010) + MySQL 8 + Milvus 向量库
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: medical-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      MYSQL_DATABASE: medical-assistant-master
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      # 宿主机已有一份 MySQL 占用 3306，故把容器 MySQL 映射到宿主 3307
+      # 容器内仍是 3306，后端通过服务名 mysql:3306 访问不受影响
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: medical-etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - etcd_data:/etcd
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: medical-minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address ":9001"
+    volumes:
+      - minio_data:/minio_data
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.3.4
+    container_name: medical-milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: medical-backend
+    environment:
+      DB_TYPE: mysql
+      DATABASE_NAME: medical-assistant-master
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      MILVUS_ENABLE: "1"
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-xxx}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-deepseek-chat}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-}
+      EMBED_DIM: ${EMBED_DIM:-768}
+      CHUNK_SIZE: ${CHUNK_SIZE:-500}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-80}
+      TOP_K: ${TOP_K:-5}
+      MIN_SIMILARITY: ${MIN_SIMILARITY:-0.30}
+      BACKEND_PORT: 8010
+      JWT_SECRET: ${JWT_SECRET:-medical-assistant-secret-key-2024}
+    ports:
+      - "8010:8010"
+    volumes:
+      - uploads_data:/app/backend/data/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      milvus:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: medical-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  uploads_data:

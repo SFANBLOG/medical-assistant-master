@@ -1,0 +1,161 @@
+/* ===== 全局基础样式 ===== */
+:root {
+  --med-primary: #409eff;
+  --med-success: #67c23a;
+  --med-warning: #e6a23c;
+  --med-danger: #f56c6c;
+  --med-info: #909399;
+  --med-bg: #f0f4fa;
+  --med-card-radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  font-size: 14px;
+  color: #303133;
+  background-color: var(--med-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== 通用工具类 ===== */
+.page-container {
+  padding: 16px;
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.page-toolbar .spacer {
+  flex: 1;
+}
+
+.text-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ===== 统计卡片 ===== */
+.stat-card .el-card__body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.stat-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.stat-info .stat-label {
+  font-size: 13px;
+  color: #909399;
+}
+
+.stat-info .stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+  margin-top: 2px;
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ===== 页面标题 ===== */
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: #303133;
+}
+
+/* 卡片标题 */
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+/* 角色标签颜色 */
+.role-tag-admin {
+  background: #fef0f0;
+  border-color: #fde2e2;
+  color: #f56c6c;
+}
+
+.role-tag-doctor {
+  background: #ecf5ff;
+  border-color: #d9ecff;
+  color: #409eff;
+}
+
+.role-tag-nurse {
+  background: #f0f9eb;
+  border-color: #e1f3d8;
+  color: #67c23a;
+}
+
+.role-tag-patient {
+  background: #fdf6ec;
+  border-color: #faecd8;
+  color: #e6a23c;
+}
+
+.role-tag-public {
+  background: #f4f4f5;
+  border-color: #e9e9eb;
+  color: #909399;
+}

@@ -1,0 +1,19 @@
+# 医智助手 · 前端镜像（Vue3 + Vite + Nginx）
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# 安装依赖（node_modules 已在 .dockerignore 中排除）
+COPY frontend/package*.json ./
+RUN npm install
+
+# 构建静态资源
+COPY frontend/ ./
+RUN npm run build
+
+# 用 Nginx 托管并反向代理 /api 到后端
+FROM nginx:1.27-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

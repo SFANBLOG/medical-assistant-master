@@ -1,0 +1,24 @@
+# 环境密钥
+.env
+*.env
+
+# python缓存
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# docker、日志
+*.log
+/workbuddy/
+
+# 模型、大文件
+*.bin
+*.safetensors
+*.zip
+*.tar.gz
+
+# node前端
+frontend/node_modules/
+frontend/dist/
