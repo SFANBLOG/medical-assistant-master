@@ -7,8 +7,10 @@
   数据自动持久化到 backend/data/numpy_store.pkl（进程重启后仍可检索）
 """
 import json
+import os
 import pickle
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -62,8 +64,7 @@ class NumpyStore:
     def _load_from_disk(self):
         """启动时从磁盘加载向量数据。
 
-        使用兼容反序列化器，可正确加载重构前（模块路径为 `rag.*` 等）保存的 pickle，
-        并在加载后重新落盘一次，将记录迁移到新的 `backend.*` 模块路径。
+        使用兼容反序列化器，可正确加载重构前（模块路径为 `rag.*` 等）保存的 pickle。
         """
         try:
             if self._persist_path.exists() and self._persist_path.stat().st_size > 0:
@@ -73,21 +74,58 @@ class NumpyStore:
                     self._records = {}
                 self._dirty = True
                 print(f"[NumpyStore] 从磁盘加载 {len(self._records)} 条向量记录")
-                # 首次以新模块路径重新落盘，完成 pickle 迁移
-                if self._records:
-                    self._save_to_disk()
         except Exception as e:
             print(f"[NumpyStore] 加载持久化数据失败（忽略）: {e}")
             self._records = {}
 
     def _save_to_disk(self):
-        """将向量数据持久化到磁盘（临时文件 + 原子替换）。"""
+        """将向量数据持久化到磁盘。
+
+        写入进程/线程独立的临时文件后做原子替换；对 Windows 文件锁错误
+        （WinError 32：目标 pkl 被另一进程占用，常见于 Flask watchdog 热重载
+        窗口）做有限次退避重试，避免增量向量因 replace 失败而丢失。
+
+        注意：临时文件名自带 pid+tid，且用普通 open 写入（不依赖
+        tempfile.mkstemp，避免其返回的底层 fd 泄漏导致源文件被占用、
+        在 Windows 上 os.replace 直接报 WinError 32 的坑）。
+        """
         try:
-            tmp = self._persist_path.with_suffix(".tmp")
-            with open(tmp, "wb") as f:
-                pickle.dump(self._records, f)
-            tmp.replace(self._persist_path)
-        except Exception as e:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            # 独立临时文件名（带 pid+tid），避免多进程/多线程共用同一 tmp 互相覆盖
+            tmp_name = self._persist_path.with_name(
+                f"{self._persist_path.stem}.{os.getpid()}.{threading.get_ident()}.tmp"
+            )
+            try:
+                with open(tmp_name, "wb") as f:
+                    pickle.dump(self._records, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    f.flush()
+                    os.fsync(f.fileno())
+            except BaseException:
+                # 写入失败清理临时文件，避免残留
+                try:
+                    os.remove(tmp_name)
+                except OSError:
+                    pass
+                raise
+            # 原子替换，遇文件锁重试（Windows 上目标被占用会抛 PermissionError/WinError 32）
+            last_err: Optional[Exception] = None
+            for attempt in range(15):
+                try:
+                    os.replace(tmp_name, self._persist_path)
+                    return
+                except PermissionError as e:  # noqa: BLE001  Windows WinError 32
+                    last_err = e
+                    if attempt == 0:
+                        print(f"[NumpyStore] 持久化被文件锁占用，重试中…(WinError 32)")
+                    time.sleep(0.1)
+                except OSError as e:  # noqa: BLE001  兜底捕获其它替换错误
+                    last_err = e
+                    if attempt == 0:
+                        print(f"[NumpyStore] 持久化临时失败，重试中…({e})")
+                    time.sleep(0.1)
+            # 重试耗尽：尽量保留临时文件供排查，并记录错误
+            print(f"[NumpyStore] 持久化失败（重试耗尽）: {last_err}")
+        except Exception as e:  # noqa: BLE001
             print(f"[NumpyStore] 持久化失败: {e}")
 
     def _rebuild_matrix(self):

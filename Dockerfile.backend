@@ -14,8 +14,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 先装依赖以利用分层缓存
+# 坑：镜像自带 pip(24.x) 解析不了新版 numpy 的 metadata，会报
+# "Could not find a version that satisfies the requirement numpy>=1.24.0 (from versions: none)"，
+# 必须先升级 pip 再安装依赖。
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend/requirements-ocr.txt ./backend/requirements-ocr.txt
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir --retries 3 --timeout 60 -r backend/requirements.txt
+
+# OCR（扫描件 / 图片识别）默认关闭：onnxruntime + opencv 约 200MB 且构建慢，
+# 非 headless 的 opencv-python 在 slim 镜像里 import cv2 还会缺 libxcb/libGL。
+# 需要时构建：docker build --build-arg INSTALL_OCR=true ...
+ARG INSTALL_OCR=false
+RUN if [ "$INSTALL_OCR" = "true" ]; then \
+        pip install --no-cache-dir --retries 3 --timeout 60 \
+            -r backend/requirements-ocr.txt \
+        && pip uninstall -y opencv-python \
+        && pip install --no-cache-dir --no-deps opencv-python-headless ; \
+    fi
 
 # 复制后端代码与 gunicorn 入口
 COPY backend/ ./backend/

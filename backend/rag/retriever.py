@@ -158,6 +158,9 @@ def retrieve(
     results = []
     for h in reranked:
         doc = docs.get(h["doc_id"], {})
+        if not doc:
+            # 文档未通过复核或处理未完成：跳过，不进入上下文
+            continue
         results.append(
             {
                 "doc_id": h["doc_id"],
@@ -239,12 +242,14 @@ def _get_doc_metadata(doc_ids: list[int]) -> dict:
     if not doc_ids:
         return {}
     placeholders = ", ".join(["%s"] * len(doc_ids))
+    # 仅返回「已复核通过且向量化完成」的文档：未复核(pending)/驳回(rejected)/处理中
+    # 的文档不参与检索，避免未经人工确认的内容影响 AI 回答。
     rows = fetchall(
         f"""
         SELECT d.id, d.filename, d.kb_id, k.name AS kb_name
         FROM documents d
         JOIN knowledge_bases k ON d.kb_id = k.id
-        WHERE d.id IN ({placeholders})
+        WHERE d.id IN ({placeholders}) AND d.review_status = 'approved' AND d.status = 'ready'
         """,
         tuple(doc_ids),
     )

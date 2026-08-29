@@ -7,7 +7,17 @@ requests>=2.31.0
 numpy>=1.24.0
 python-docx>=0.8.11
 python-pptx>=0.6.21
+openpyxl>=3.1.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+# PDF：优先 PyMuPDF（文本层还原质量更好），pypdf/PyPDF2 作为降级
+pymupdf>=1.23.0
+pypdf>=3.0.0
 PyPDF2>=3.0.0
+# 扫描件 / 图片 OCR 为可选依赖，见 backend/requirements-ocr.txt。
+# 默认镜像不安装：rapidocr 会拉入 onnxruntime + opencv-python（约 200MB），
+# 且 opencv-python（非 headless）import cv2 需要 libxcb/libGL 等 GUI 系统库，
+# slim 镜像里会直接 ImportError。缺库时 file_parser 会给出明确提示，不影响其它格式。
 werkzeug>=3.0.0
 gunicorn>=21.2.0
 pymilvus>=2.3.0,<2.4.0

@@ -65,14 +65,20 @@
           <el-radio-button value="public">公开文档</el-radio-button>
           <el-radio-button value="private">私有文档</el-radio-button>
         </el-radio-group>
-        <el-upload :show-file-list="false" :before-upload="handleUpload" :disabled="uploading" multiple>
+        <el-upload
+          :show-file-list="false"
+          :before-upload="handleUpload"
+          :disabled="uploading"
+          multiple
+          accept=".txt,.md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.html,.htm,.csv,.json,.xml,.log,.rtf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.gif,.py,.js,.ts,.java,.go,.sql,.yaml,.yml,.ini,.toml,.rst,.tex"
+        >
           <el-button type="primary" :loading="uploading">
             <el-icon><Upload /></el-icon>&nbsp;上传文档
           </el-button>
         </el-upload>
       </div>
       <el-alert type="info" :closable="false" style="margin-bottom: 12px"
-        :title="`公开文档存入「${drawerKb?.name}/公开/」，患者、群众可查询；私有文档存入「${drawerKb?.name}/私有/」，仅医生/管理员可见。支持 .txt / .md / .pdf / .docx / .pptx，单文件不超过 20MB。`" />
+        :title="`公开文档存入「${drawerKb?.name}/公开/」，患者、群众可查询；私有文档存入「${drawerKb?.name}/私有/」，仅医生/管理员可见。支持 215 种格式：文档（PDF/Word/PPT/Excel/HTML）、图片（PNG/JPG/BMP/TIFF/WEBP，自动 OCR 识别文字）、文本与代码（txt/md/csv/json/py 等）；扫描件 PDF 无文本层时自动 OCR；.doc/.xls/.ppt 需服务器安装 LibreOffice。单文件不超过 20MB。`" />
       <el-table :data="docs" v-loading="docsLoading" row-key="id" size="small">
         <el-table-column label="文件名" prop="filename" min-width="180" show-overflow-tooltip />
         <el-table-column label="类型" prop="file_type" width="70" />

@@ -89,7 +89,7 @@
           :show-file-list="false"
           :http-request="handleUpload"
           :disabled="uploading"
-          accept=".md,.txt,.pdf,.doc,.docx"
+          accept=".txt,.md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.html,.htm,.csv,.json,.xml,.log,.rtf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.gif,.py,.js,.ts,.java,.go,.sql,.yaml,.yml,.ini,.toml,.rst,.tex"
         >
           <el-button type="primary" size="small" :loading="uploading" :icon="'Upload'">
             上传文档

@@ -1,12 +1,12 @@
--- 医智助手业务库 Schema MySQL版本（修复索引语法，兼容5.7&8.0）
-CREATE DATABASE IF NOT EXISTS medical-assistant-master DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE medical-assistant-master;
+-- 医智助手业务库 Schema MySQL版本（修复数据库名横杠、兼容5.7&8.0）
+CREATE DATABASE IF NOT EXISTS `medical-assistant-master` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `medical-assistant-master`;
 
 CREATE TABLE IF NOT EXISTS users (
     id            INT PRIMARY KEY AUTO_INCREMENT,
     username      VARCHAR(128) UNIQUE NOT NULL,
     password_hash TEXT                NOT NULL,
-    role          VARCHAR(32)         NOT NULL CHECK (role IN ('patient', 'doctor', 'nurse', 'public', 'admin')),
+    role          VARCHAR(32)         NOT NULL,
     display_name  VARCHAR(128),
     first_login_done TINYINT NOT NULL DEFAULT 0,
     created_at    DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     owner_id    INT          NULL,
     name        VARCHAR(255) NOT NULL,
     description TEXT,
-    visibility  VARCHAR(16)  NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+    visibility  VARCHAR(16)  NOT NULL DEFAULT 'private',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_kb_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE = InnoDB
@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS documents (
     filename    VARCHAR(255) NOT NULL,
     file_path   VARCHAR(512) NOT NULL,
     file_type   VARCHAR(32)  NOT NULL,
-    visibility  VARCHAR(16)  NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
+    visibility  VARCHAR(16)  NOT NULL DEFAULT 'public',
     chunk_count INT          NOT NULL DEFAULT 0,
-    status      VARCHAR(16)  NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'failed')),
+    status      VARCHAR(16)  NOT NULL DEFAULT 'processing',
     error       TEXT,
     indexed_at  DATETIME     NULL,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS messages (
     id              INT PRIMARY KEY AUTO_INCREMENT,
     conversation_id VARCHAR(36) NOT NULL,
-    role            VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')),
+    role            VARCHAR(16) NOT NULL,
     content         TEXT        NOT NULL,
     created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_msg_conv FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS hospitalizations (
     bed_no         VARCHAR(32),
     diagnosis      TEXT,
     doctor_id      INT            NULL,
-    status         VARCHAR(16)    NOT NULL DEFAULT 'in_hospital' CHECK (status IN ('in_hospital', 'discharged')),
+    status         VARCHAR(16)    NOT NULL DEFAULT 'in_hospital',
     total_cost     DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     created_at     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_hosp_patient FOREIGN KEY (patient_id) REFERENCES users (id) ON DELETE CASCADE,
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS bills (
     category    VARCHAR(64)         NOT NULL,
     description TEXT,
     amount      DECIMAL(12, 2)      NOT NULL DEFAULT 0.00,
-    status      VARCHAR(16)         NOT NULL DEFAULT 'unpaid' CHECK (status IN ('paid', 'unpaid')),
+    status      VARCHAR(16)         NOT NULL DEFAULT 'unpaid',
     created_at  DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_bill_patient FOREIGN KEY (patient_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE = InnoDB
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     time_slot  VARCHAR(32)    NOT NULL,
     symptom    TEXT,
     fee        DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    status     VARCHAR(16)    NOT NULL DEFAULT 'booked' CHECK (status IN ('booked', 'confirmed', 'visited', 'cancelled')),
+    status     VARCHAR(16)    NOT NULL DEFAULT 'booked',
     created_at DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_appt_patient FOREIGN KEY (patient_id) REFERENCES users (id) ON DELETE CASCADE,
     CONSTRAINT fk_appt_doctor FOREIGN KEY (doctor_id) REFERENCES users (id) ON DELETE SET NULL
@@ -257,7 +257,7 @@ CREATE TABLE IF NOT EXISTS nursing_records (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     patient_id  INT         NOT NULL,
     nurse_id    INT         NOT NULL,
-    record_type VARCHAR(16) NOT NULL DEFAULT 'daily' CHECK (record_type IN ('daily', 'medication', 'vitals', 'other')),
+    record_type VARCHAR(16) NOT NULL DEFAULT 'daily',
     content     TEXT        NOT NULL,
     recorded_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_nursing_patient FOREIGN KEY (patient_id) REFERENCES users (id) ON DELETE CASCADE,
@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     work_date  DATE        NOT NULL,
     shift      VARCHAR(32) NOT NULL,
     department VARCHAR(128),
-    status     VARCHAR(16) NOT NULL DEFAULT 'on_duty' CHECK (status IN ('on_duty', 'off', 'leave')),
+    status     VARCHAR(16) NOT NULL DEFAULT 'on_duty',
     created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_schedule_staff FOREIGN KEY (staff_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE = InnoDB

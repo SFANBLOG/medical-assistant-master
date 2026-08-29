@@ -80,6 +80,8 @@ def upload_document(kb_id):
         filename=file.filename,
         visibility=visibility,
         content_bytes=content_bytes,
+        uploader_id=user["user_id"],
+        uploader_role=user["role"],
     )
 
     if "error" in result:

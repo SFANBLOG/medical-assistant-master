@@ -7,7 +7,14 @@ from pathlib import Path
 
 from backend import config
 from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
-from backend.utils.file_parser import parse_file, get_file_type
+from backend.utils.file_parser import (
+    parse_file,
+    parse_file_pages,
+    strip_header_footer,
+    get_file_type,
+    is_allowed,
+    get_ext,
+)
 from backend.rag.chunker import chunk_document
 from backend.rag.embedder import get_embedder
 from backend.rag.vectorstore import get_vectorstore, VectorRecord
@@ -98,6 +105,28 @@ def delete_knowledge_base(kb_id: int) -> bool:
     return True
 
 
+def _extract_document_text(path: str, file_type: str) -> str:
+    """
+    按格式提取纯文本。
+
+    PDF 走专用路径：逐页提取（无文本层时自动 OCR）-> 空文本检测
+    -> 清洗页眉/页脚/页码，再把各页用空行拼接交给切分器；其它格式直接整体解析。
+    """
+    if file_type != "pdf":
+        return parse_file(path)
+
+    pages = parse_file_pages(path)
+    total_chars = sum(len(t.strip()) for _, t in pages)
+    if total_chars < config.PDF_MIN_TEXT_CHARS:
+        raise ValueError(
+            "PDF 未提取到任何文本（扫描件需 OCR 支持，图片型 PDF 请提供更清晰的版本）"
+        )
+
+    if config.PDF_STRIP_HEADER_FOOTER:
+        pages = strip_header_footer(pages)
+    return "\n\n".join(t for _, t in pages)
+
+
 def upload_document(
     kb_id: int,
     file_path: str,
@@ -114,6 +143,10 @@ def upload_document(
     if not kb:
         return {"error": "知识库不存在"}
 
+    # 扩展名白名单校验：不支持的格式在落盘前直接拒绝
+    if not is_allowed(filename):
+        return {"error": f"不支持的文件格式：.{get_ext(filename) or '未知'}"}
+
     # 确定保存路径
     vis_folder = "公开" if visibility == "public" else "私有"
     save_dir = config.UPLOAD_DIR / kb["name"] / vis_folder
@@ -129,11 +162,14 @@ def upload_document(
     elif not save_path.exists():
         return {"error": "文件不存在"}
 
-    # 解析文本
+    # 解析文本（PDF 走分页 + 页眉页脚清洗的专用路径）
     try:
-        text = parse_file(str(save_path))
+        text = _extract_document_text(str(save_path), file_type)
         if not text.strip():
             return {"error": "文件内容为空"}
+    except ValueError as e:
+        # 扫描件等「可预期」的解析失败：明确提示，不记为 failed
+        return {"error": str(e)}
     except Exception as e:
         # 更新状态为 failed
         execute(

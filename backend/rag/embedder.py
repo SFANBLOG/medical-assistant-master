@@ -8,12 +8,12 @@
 相同/相似文本的 token 分布接近 → cosine 相似度高。
 """
 import hashlib
-import os
 import re
 
 import numpy as np
 
 from backend import config
+
 # ---- 模块级缓存 ----
 _bge_model = None
 _bge_failed = False

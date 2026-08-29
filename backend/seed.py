@@ -23,7 +23,13 @@ from backend.utils.db import (
 from backend.rag.chunker import chunk_document
 from backend.rag.embedder import get_embedder
 from backend.rag.vectorstore import get_vectorstore, VectorRecord
-from backend.utils.file_parser import parse_file
+from backend.utils.file_parser import (
+    is_allowed,
+    get_file_type,
+    parse_file,
+    parse_file_pages,
+    strip_header_footer,
+)
 
 DEMO_PASSWORD = "demo123"
 PASSWORD_HASH = generate_password_hash(DEMO_PASSWORD)
@@ -184,10 +190,23 @@ def seed_documents_and_vectors():
             if not folder.exists():
                 continue
 
-            for md_file in sorted(folder.glob("*.md")):
-                rel_path = f"{kb_name}/{vis_folder}/{md_file.name}"
+            # 扫描全部受支持格式（md / txt / pdf / docx / pptx / xlsx ...）
+            for doc_file in sorted(p for p in folder.iterdir()
+                                   if p.is_file() and is_allowed(p.name)):
+                rel_path = f"{kb_name}/{vis_folder}/{doc_file.name}"
+                file_type = get_file_type(doc_file.name)
                 try:
-                    file_text = parse_file(str(md_file))
+                    if file_type == "pdf":
+                        pages = parse_file_pages(str(doc_file))
+                        if sum(len(t.strip()) for _, t in pages) < config.PDF_MIN_TEXT_CHARS:
+                            print(f"    [skip] {rel_path}: 无文本层（疑似扫描件）")
+                            continue
+                        if config.PDF_STRIP_HEADER_FOOTER:
+                            pages = strip_header_footer(pages)
+                        file_text = "\n\n".join(t for _, t in pages)
+                    else:
+                        file_text = parse_file(str(doc_file))
+
                     chunks = chunk_document(file_text)
 
                     if not chunks:
@@ -197,8 +216,8 @@ def seed_documents_and_vectors():
                     # 注册文档
                     execute(
                         f"INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, chunk_count, status) "
-                        f"VALUES ({ph}, {ph}, {ph}, 'md', {ph}, {ph}, 'ready')",
-                        (kb_id, md_file.stem, rel_path, visibility, len(chunks))
+                        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'ready')",
+                        (kb_id, doc_file.stem, rel_path, file_type, visibility, len(chunks))
                     )
 
                     # 获取文档 ID

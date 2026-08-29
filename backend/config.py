@@ -40,6 +40,15 @@ OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))
+# 是否把「章节路径」拼到 chunk 文本前（如「第3章 糖尿病 > 3.1 分型」）
+CHUNK_HEADING_PREFIX = os.getenv("CHUNK_HEADING_PREFIX", "1") == "1"
+
+# ---- PDF 解析 ----
+# 是否清洗跨页重复的页眉 / 页脚与页码行
+PDF_STRIP_HEADER_FOOTER = os.getenv("PDF_STRIP_HEADER_FOOTER", "1") == "1"
+# 整篇 PDF 提取出的字符数低于该值时，视为扫描件（无文本层）
+PDF_MIN_TEXT_CHARS = int(os.getenv("PDF_MIN_TEXT_CHARS", "50"))
+
 TOP_K = int(os.getenv("TOP_K", "5"))
 MIN_SIMILARITY = float(os.getenv("MIN_SIMILARITY", "0.30"))
 
