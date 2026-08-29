@@ -2,20 +2,22 @@
 向量存储：Milvus 主方案 + NumpyStore 纯 Python 兜底。
 
 - Milvus 集合 `medical_chunks`：字段 (id, kb_id, doc_id, chunk_index, text, embedding)
-  cosine 度量 + HNSW 索引 + kb_id 分区键
+  cosine 度量 + HNSW 索引
 - NumpyStore：内存 dict + numpy 数组，cosine 相似度，功能等价；
   数据自动持久化到 backend/data/numpy_store.pkl（进程重启后仍可检索）
+
+注意：MilvusStore 已迁移到 PyMilvus 3.x 推荐的 `MilvusClient` API，
+避免 ORM 风格 API（connections / Collection / utility）在 PyMilvus 3.1 中被移除。
 """
-import json
 import os
 import pickle
 import threading
 import time
 from dataclasses import dataclass, field
+from pickle import Unpickler
 from typing import Optional
 
 import numpy as np
-from pickle import Unpickler
 
 from backend import config
 from backend.rag.embedder import get_embedder
@@ -26,6 +28,8 @@ _OLD_TOP_PKGS = ("rag", "utils", "services", "routes", "models", "seed", "config
 
 
 class _CompatUnpickler(Unpickler):
+    """兼容反序列化器：将旧模块路径 `rag.*` 等映射到 `backend.*`。"""
+
     def find_class(self, module: str, name: str):
         for pkg in _OLD_TOP_PKGS:
             if module == pkg or module.startswith(pkg + "."):
@@ -54,7 +58,6 @@ class NumpyStore:
         self._matrix: Optional[np.ndarray] = None    # (N, D) float32
         self._ids: list[str] = []                     # 与矩阵行对齐
         self._dirty = True                            # 矩阵是否需要重建
-        self._dim = None
         self._embedder = get_embedder()
         self._dim = self._embedder.dim
         # 持久化路径：进程重启后从磁盘恢复向量
@@ -74,7 +77,7 @@ class NumpyStore:
                     self._records = {}
                 self._dirty = True
                 print(f"[NumpyStore] 从磁盘加载 {len(self._records)} 条向量记录")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"[NumpyStore] 加载持久化数据失败（忽略）: {e}")
             self._records = {}
 
@@ -116,7 +119,7 @@ class NumpyStore:
                 except PermissionError as e:  # noqa: BLE001  Windows WinError 32
                     last_err = e
                     if attempt == 0:
-                        print(f"[NumpyStore] 持久化被文件锁占用，重试中…(WinError 32)")
+                        print("[NumpyStore] 持久化被文件锁占用，重试中…(WinError 32)")
                     time.sleep(0.1)
                 except OSError as e:  # noqa: BLE001  兜底捕获其它替换错误
                     last_err = e
@@ -267,53 +270,71 @@ class NumpyStore:
 
 
 class MilvusStore:
-    """Milvus 向量存储。"""
+    """Milvus 向量存储（基于 PyMilvus 3.x 的 MilvusClient）。"""
 
     def __init__(self):
-        from pymilvus import connections, Collection, utility, FieldSchema, CollectionSchema, DataType
-        self._connections = connections
-        self._Collection = Collection
-        self._utility = utility
+        # 延迟导入：Milvus 未启用时避免引入 pymilvus
+        from pymilvus import FieldSchema, CollectionSchema, DataType
         self._FieldSchema = FieldSchema
         self._CollectionSchema = CollectionSchema
         self._DataType = DataType
 
+        self._client = None          # MilvusClient 实例
         self._connected = False
-        self._collection = None
+        self._last_error = None      # 最近一次连接失败的异常，供调用方区分原因
         self._embedder = get_embedder()
         self._dim = self._embedder.dim
 
     def _connect(self) -> bool:
-        """连接 Milvus，成功返回 True。"""
-        if self._connected:
+        """连接 Milvus，成功返回 True。
+
+        使用 MilvusClient（PyMilvus 3.x 推荐 API），构造时即建立连接。
+        - 连接成功：加载/创建集合后返回 True
+        - 连接被拒绝 / 服务未启动：立即捕获，记录 _last_error，返回 False
+        - 连接超时：抛出异常，由 _milvus_ready_within 按超时处理
+
+        注意区分「服务未启动（连接被拒绝）」与「连接超时」两种失败，
+        避免把本地没起 Milvus 的常态误报成「超时」。
+        """
+        if self._connected and self._client is not None:
             return True
         try:
-            self._connections.connect(
-                alias="default",
-                host=config.MILVUS_HOST,
-                port=str(config.MILVUS_PORT),
-                timeout=5,
-            )
+            from pymilvus import MilvusClient
+            uri = f"http://{config.MILVUS_HOST}:{config.MILVUS_PORT}"
+            # 用可配置的短超时：本地未启动 Milvus 时快速失败，不阻塞启动流程
+            self._client = MilvusClient(uri=uri, timeout=config.MILVUS_CONNECT_TIMEOUT)
             self._connected = True
+            self._last_error = None
             print(f"[Milvus] 连接成功: {config.MILVUS_HOST}:{config.MILVUS_PORT}")
             self._ensure_collection()
             return True
-        except Exception as e:
-            print(f"[Milvus] 连接失败: {e}")
+        except Exception as e:  # noqa: BLE001
+            self._last_error = e
             self._connected = False
+            self._client = None
+            # 区分「服务未启动 / 地址不可达」与「真正超时」，给出更准确的提示
+            msg = str(e).lower()
+            if "unavailable" in msg or "refused" in msg or "code=2" in msg:
+                print(
+                    f"[Milvus] 连接失败（服务未启动或地址不可达）: "
+                    f"{config.MILVUS_HOST}:{config.MILVUS_PORT}"
+                )
+            else:
+                print(f"[Milvus] 连接失败: {e}")
             return False
 
     def _ensure_collection(self):
-        """确保集合存在，不存在则创建。"""
-        if not self._connected:
+        """确保集合存在，不存在则创建并建立 HNSW 索引。"""
+        if not self._connected or self._client is None:
             return
 
         coll_name = config.MILVUS_COLLECTION
-        if self._utility.has_collection(coll_name):
-            self._collection = self._Collection(coll_name)
-            self._collection.load()
+        if self._client.has_collection(coll_name):
+            # 集合已存在：加载到内存即可
+            self._client.load_collection(coll_name)
             print(f"[Milvus] 集合已存在: {coll_name}")
         else:
+            # 构建 Schema
             fields = [
                 self._FieldSchema(name="id", dtype=self._DataType.VARCHAR, max_length=64, is_primary=True),
                 self._FieldSchema(name="kb_id", dtype=self._DataType.INT64),
@@ -323,17 +344,37 @@ class MilvusStore:
                 self._FieldSchema(name="embedding", dtype=self._DataType.FLOAT_VECTOR, dim=self._dim),
             ]
             schema = self._CollectionSchema(fields, description="medical chunks")
-            self._collection = self._Collection(coll_name, schema)
 
-            # 创建索引
-            index_params = {
-                "index_type": "HNSW",
-                "metric_type": "COSINE",
-                "params": {"M": 16, "efConstruction": 200},
-            }
-            self._collection.create_index(field_name="embedding", index_params=index_params)
-            self._collection.load()
+            # 构建索引参数：HNSW + COSINE
+            index_params = self._client.prepare_index_params()
+            index_params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 16, "efConstruction": 200},
+            )
+
+            self._client.create_collection(
+                collection_name=coll_name,
+                schema=schema,
+                index_params=index_params,
+            )
+            self._client.load_collection(coll_name)
             print(f"[Milvus] 集合创建成功: {coll_name}")
+
+    def _records_to_dicts(self, records: list[VectorRecord]) -> list[dict]:
+        """将 VectorRecord 列表转换为 MilvusClient 要求的 dict 列表。"""
+        return [
+            {
+                "id": r.id,
+                "kb_id": r.kb_id,
+                "doc_id": r.doc_id,
+                "chunk_index": r.chunk_index,
+                "text": r.text[:4000],
+                "embedding": r.embedding,
+            }
+            for r in records
+        ]
 
     def insert(self, record: VectorRecord):
         self.insert_batch([record])
@@ -341,28 +382,21 @@ class MilvusStore:
     def insert_batch(self, records: list[VectorRecord]):
         if not self._connect() or not records:
             return
-        data = [
-            [r.id for r in records],
-            [r.kb_id for r in records],
-            [r.doc_id for r in records],
-            [r.chunk_index for r in records],
-            [r.text[:4000] for r in records],
-            [r.embedding for r in records],
-        ]
-        self._collection.insert(data)
-        self._collection.flush()
+        data = self._records_to_dicts(records)
+        self._client.insert(collection_name=config.MILVUS_COLLECTION, data=data)
+        self._client.flush(collection_name=config.MILVUS_COLLECTION)
 
     def delete_by_doc(self, doc_id: int):
         if not self._connect():
             return
         expr = f"doc_id == {doc_id}"
-        self._collection.delete(expr)
+        self._client.delete(collection_name=config.MILVUS_COLLECTION, filter=expr)
 
     def delete_by_kb(self, kb_id: int):
         if not self._connect():
             return
         expr = f"kb_id == {kb_id}"
-        self._collection.delete(expr)
+        self._client.delete(collection_name=config.MILVUS_COLLECTION, filter=expr)
 
     def search(
         self,
@@ -375,43 +409,46 @@ class MilvusStore:
             return []
 
         # 构造过滤表达式
-        if kb_ids:
-            ids_str = ",".join(str(int(i)) for i in kb_ids)
-            expr = f"kb_id in [{ids_str}]"
-        else:
-            expr = ""
+        expr = f"kb_id in [{','.join(str(int(i)) for i in kb_ids)}]" if kb_ids else ""
 
         search_params = {"metric_type": "COSINE", "params": {"ef": 64}}
-        results = self._collection.search(
-            data=[query_vec.tolist()],
+        # 兼容 query_vec 为 numpy 数组或普通 list
+        query_data = [np.asarray(query_vec, dtype=np.float32).tolist()]
+        results = self._client.search(
+            collection_name=config.MILVUS_COLLECTION,
+            data=query_data,
             anns_field="embedding",
-            param=search_params,
+            search_params=search_params,
             limit=top_k,
-            expr=expr,
+            filter=expr,
             output_fields=["id", "kb_id", "doc_id", "chunk_index", "text"],
         )
 
         out = []
-        for hit in results[0]:
-            sim = float(hit.score)
-            if sim < min_similarity:
-                continue
-            entity = hit.entity
-            out.append({
-                "id": entity.get("id"),
-                "kb_id": entity.get("kb_id"),
-                "doc_id": entity.get("doc_id"),
-                "chunk_index": entity.get("chunk_index"),
-                "text": entity.get("text"),
-                "similarity": sim,
-            })
+        # MilvusClient.search 返回 List[List[dict]]，外层按输入向量分组
+        for group in results:
+            for hit in group:
+                sim = float(hit.get("distance", 0.0))
+                if sim < min_similarity:
+                    continue
+                out.append({
+                    "id": hit.get("id"),
+                    "kb_id": hit.get("kb_id"),
+                    "doc_id": hit.get("doc_id"),
+                    "chunk_index": hit.get("chunk_index"),
+                    "text": hit.get("text"),
+                    "similarity": sim,
+                })
         return out
 
     @property
     def count(self) -> int:
         if not self._connect():
             return 0
-        return self._collection.num_entities
+        # MilvusClient 2.5+ 已移除 ORM 的 num_entities，改用 get_collection_stats
+        stats = self._client.get_collection_stats(collection_name=config.MILVUS_COLLECTION)
+        # 返回结构形如 {"row_count": N, "partitions": [...]}
+        return int(stats.get("row_count", 0))
 
     def get_all_chunks(self) -> list[dict]:
         """
@@ -423,12 +460,13 @@ class MilvusStore:
             return []
         out: list[dict] = []
         try:
-            # Milvus query 不支持无 expr 全量扫描，使用恒成立 expr + 分页
+            # Milvus query 通常不允许无 filter 的全量扫描，使用空 filter + 分页兜底
             page = 0
             page_size = 1000
             while True:
-                rows = self._collection.query(
-                    expr="",
+                rows = self._client.query(
+                    collection_name=config.MILVUS_COLLECTION,
+                    filter="",
                     output_fields=["id", "kb_id", "doc_id", "chunk_index", "text"],
                     offset=page * page_size,
                     limit=page_size,
@@ -455,7 +493,7 @@ class MilvusStore:
     def clear(self) -> None:
         """清空全部向量（重建索引前调用）。
 
-        Milvus 不支持空 expr 的 delete，先取出全部主键再按主键集合删除。
+        Milvus 不支持空 filter 的 delete，先取出全部主键再按主键集合删除。
         """
         if not self._connect():
             return
@@ -464,8 +502,9 @@ class MilvusStore:
             page = 0
             page_size = 1000
             while True:
-                rows = self._collection.query(
-                    expr="",
+                rows = self._client.query(
+                    collection_name=config.MILVUS_COLLECTION,
+                    filter="",
                     output_fields=["id"],
                     offset=page * page_size,
                     limit=page_size,
@@ -478,12 +517,11 @@ class MilvusStore:
                 page += 1
             if not ids:
                 return
-            # 分块删除，避免 expr 过长
+            # 分块删除，避免 filter 过长
             for i in range(0, len(ids), 200):
                 batch = ids[i : i + 200]
-                id_list = ", ".join(f'"{v}"' for v in batch)
-                self._collection.delete(expr=f"id in [{id_list}]")
-            self._collection.flush()
+                self._client.delete(collection_name=config.MILVUS_COLLECTION, ids=batch)
+            self._client.flush(collection_name=config.MILVUS_COLLECTION)
         except Exception as e:  # noqa: BLE001
             print(f"[Milvus] clear 失败: {e}")
 
@@ -493,11 +531,14 @@ _store: Optional[object] = None
 _store_lock = threading.Lock()
 
 
-def _milvus_ready_within(store, timeout: int = 30) -> bool:
-    """在后台线程中连接并加载 Milvus 集合，超时则返回 False。
+def _milvus_ready_within(store, timeout: int = 30) -> tuple[bool, bool]:
+    """在后台线程中连接并加载 Milvus 集合，返回 (是否就绪, 是否超时)。
 
-    避免 Milvus 不可用 / 加载缓慢时阻塞整个应用进程（原逻辑会在
-    collection.load() 上无限等待，导致所有向量相关请求卡死）。
+    返回 (False, True)  表示线程在 timeout 内仍未结束 —— 真正「超时」
+    （服务可达但加载/响应过慢），交由 NumpyStore 兜底；
+    返回 (False, False) 表示连接被快速拒绝（服务未启动），同样兜底。
+
+    这样调用方可以区分「服务未启动」与「连接超时」两种失败，避免误报。
     """
     box: dict = {}
 
@@ -513,8 +554,8 @@ def _milvus_ready_within(store, timeout: int = 30) -> bool:
     t.join(timeout)
     if t.is_alive():
         # 超时仍在加载：判定为不可用，交由 NumpyStore 兜底
-        return False
-    return bool(box.get("ok", False))
+        return False, True
+    return bool(box.get("ok", False)), False
 
 
 def get_vectorstore():
@@ -526,17 +567,36 @@ def get_vectorstore():
         if _store is not None:
             return _store
 
-        if config.MILVUS_ENABLE:
-            try:
-                store = MilvusStore()
-                if _milvus_ready_within(store, timeout=30):
-                    _store = store
-                    print("[VectorStore] 使用 Milvus")
-                    return _store
-                else:
-                    print("[VectorStore] Milvus 连接/加载超时，降级到 NumpyStore")
-            except Exception as e:  # noqa: BLE001
-                print(f"[VectorStore] Milvus 不可用，降级到 NumpyStore: {e}")
+        # 显式关闭时直接使用 NumpyStore，不尝试连接 Milvus
+        if not config.MILVUS_ENABLE:
+            _store = NumpyStore()
+            print("[VectorStore] MILVUS_ENABLE=0，使用 NumpyStore（纯 Python 兜底）")
+            return _store
+
+        try:
+            store = MilvusStore()
+            # 超时上限 = 连接超时 + 2s 缓冲；超过即视为加载过慢而降级
+            ok, timed_out = _milvus_ready_within(
+                store, timeout=config.MILVUS_CONNECT_TIMEOUT + 2
+            )
+            if ok:
+                _store = store
+                print("[VectorStore] 使用 Milvus")
+                return _store
+            if timed_out:
+                # 真正超时（服务可达但响应过慢）：本地开发罕见，提示调大超时
+                print(
+                    f"[VectorStore] Milvus 连接超时（>{config.MILVUS_CONNECT_TIMEOUT}s），"
+                    f"降级到 NumpyStore"
+                )
+            else:
+                # 连接被快速拒绝（本地未启动 Milvus 是常态）：给出可执行提示
+                print(
+                    "[VectorStore] Milvus 不可用（本地未启动或地址错误），"
+                    "已降级到 NumpyStore"
+                )
+        except Exception as e:  # noqa: BLE001
+            print(f"[VectorStore] Milvus 初始化异常，降级到 NumpyStore: {e}")
 
         _store = NumpyStore()
         print("[VectorStore] 使用 NumpyStore（纯 Python 兜底）")

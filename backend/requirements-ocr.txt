@@ -1,0 +1,17 @@
+# 可选：扫描件 / 图片 OCR 支持
+#
+# 装在 slim 镜像里的两个坑：
+# 1. rapidocr-onnxruntime 会拉入 opencv-python，而 opencv-python（非 headless）
+#    import cv2 需要 libxcb / libGL 等 GUI 系统库，slim 镜像没有，会报
+#    "ImportError: libxcb.so.1: cannot open shared object file"。
+#    解决办法：装完 rapidocr 后卸掉 opencv-python，换成 opencv-python-headless；
+#    或者在 Debian 系上 apt-get install -y libgl1 libglib2.0-0 libxcb1。
+# 2. 这两个包体积约 200MB，会让构建明显变慢；不识别扫描件时可完全跳过。
+#
+# Docker 构建示例：
+#   pip install -r backend/requirements.txt
+#   pip install -r backend/requirements-ocr.txt \
+#     && pip uninstall -y opencv-python \
+#     && pip install --no-deps opencv-python-headless
+opencv-python-headless>=4.8.0
+rapidocr-onnxruntime>=1.3.0

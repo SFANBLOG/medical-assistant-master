@@ -171,7 +171,19 @@
             @keydown="handleKeydown"
           />
           <div class="input-footer">
-            <span class="input-tip">内容仅供健康参考，不能替代专业医疗诊断</span>
+            <span class="input-tip">
+              <template v-if="weather.loading">正在获取天气…</template>
+              <template v-else-if="weather.error">{{ weather.error }}</template>
+              <template v-else>
+                <el-icon class="weather-icon"><Location /></el-icon>
+                {{ weather.city }} {{ weather.currentTemp }}°C {{ weather.desc }}
+                <template v-if="weather.minTemp !== undefined && weather.maxTemp !== undefined">
+                  | 今日 {{ weather.minTemp }}°C / {{ weather.maxTemp }}°C
+                </template>
+              </template>
+              <span class="input-tip-divider">|</span>
+              内容仅供健康参考，不能替代专业医疗诊断
+            </span>
             <el-button
               type="primary"
               :loading="sending"
@@ -218,6 +230,10 @@ onMounted(() => {
   window.addEventListener('resize', checkMobile)
   loadConversations()
   loadKbs()
+  // 初始化本次展示的推荐问题，保证与上次不重复
+  suggestions.value = pickSuggestions()
+  // 加载当前位置天气（失败时保留原提示文字）
+  loadWeather()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', checkMobile)
@@ -228,17 +244,52 @@ const currentConv = ref<Conversation | null>(null)
 const messages = ref<Message[]>([])
 // kb 选项：通用知识库 id 固定为 0，作为兜底选项排在最前
 const kbs = ref<KnowledgeBase[]>([])
-const selectedKbId = ref<number | undefined | null>(undefined)
+const selectedKbId = ref<number | undefined | null>(GENERAL_KB_ID)
 const inputText = ref('')
 const sending = ref(false)
 const chatBodyRef = ref<HTMLElement>()
 
-const suggestions = [
+// 推荐问题池：每次进入页面从中随机抽取 6 个，且与上次不重复。
+// 使用 sessionStorage 记录上一次展示的问题集合，刷新/重新进入时避免重复。
+const SUGGESTION_POOL = [
   '感冒发烧应该注意什么？',
   '高血压患者的日常饮食建议',
   '糖尿病患者可以吃水果吗？',
   '体检报告中的脂肪肝严重吗？',
+  '失眠多梦怎么调理？',
+  '儿童发热需要立刻就医吗？',
+  '长期熬夜对身体有哪些危害？',
+  '如何预防季节性过敏？',
+  '胃痛反酸应该吃什么药？',
 ]
+const suggestions = ref<string[]>([])
+
+function pickSuggestions(): string[] {
+  const lastKey = 'chat_last_suggestions'
+  let lastSet: string[] = []
+  try {
+    lastSet = JSON.parse(sessionStorage.getItem(lastKey) || '[]') as string[]
+  } catch {
+    lastSet = []
+  }
+  // 先排除上次已展示的问题；若剩余不足 6 个则重置池，避免可选过少
+  let pool = SUGGESTION_POOL.filter((s) => !lastSet.includes(s))
+  if (pool.length < 6) {
+    pool = [...SUGGESTION_POOL]
+  }
+  // Fisher–Yates 洗牌后取前 6 个
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  const picked = pool.slice(0, 6)
+  try {
+    sessionStorage.setItem(lastKey, JSON.stringify(picked))
+  } catch {
+    /* 部分隐私模式下 sessionStorage 不可用，忽略 */
+  }
+  return picked
+}
 
 // 当前生效的 KB 名（含通用兜底/未选状态）
 const currentKbLabel = computed(() => {
@@ -486,12 +537,126 @@ function formatTime(t?: string): string {
   if (!t) return ''
   const d = new Date(t)
   if (isNaN(d.getTime())) return t
-  const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
+  // 统一显示为「2026年8月29日-14时35分」格式
+  const yyyy = d.getFullYear()
+  const mm = d.getMonth() + 1
+  const dd = d.getDate()
   const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  if (sameDay) return `${hh}:${mm}`
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}年${mm}月${dd}日-${hh}时${min}分`
+}
+
+/* ---------- 底部天气 ---------- */
+interface WeatherInfo {
+  city: string
+  currentTemp: number
+  desc: string
+  minTemp?: number
+  maxTemp?: number
+  loading: boolean
+  error?: string
+}
+
+const weather = reactive<WeatherInfo>({
+  city: '',
+  currentTemp: 0,
+  desc: '',
+  loading: true,
+})
+
+/** WMO Weather interpretation code → 中文简短描述 */
+function wmoToChinese(code: number): string {
+  const map: Record<number, string> = {
+    0: '晴',
+    1: '大部晴朗',
+    2: '多云',
+    3: '阴',
+    45: '雾',
+    48: '雾凇',
+    51: '毛毛雨',
+    53: '中雨',
+    55: '大雨',
+    56: '冻雨',
+    57: '强冻雨',
+    61: '小雨',
+    63: '中雨',
+    65: '大雨',
+    66: '冻雨',
+    67: '强冻雨',
+    71: '小雪',
+    73: '中雪',
+    75: '大雪',
+    77: '雪粒',
+    80: '阵雨',
+    81: '强阵雨',
+    82: '暴雨',
+    85: '阵雪',
+    86: '强阵雪',
+    95: '雷雨',
+    96: '雷雨伴冰雹',
+    99: '强雷雨伴冰雹',
+  }
+  return map[code] ?? '未知'
+}
+
+/** 获取当前位置天气：优先浏览器定位，失败回退到 IP 定位，再用 Open-Meteo 免费接口查天气。 */
+async function loadWeather() {
+  weather.loading = true
+  weather.error = undefined
+  try {
+    let lat: number | undefined
+    let lon: number | undefined
+    let city = ''
+
+    // 1) 优先使用浏览器 Geolocation API（localhost/https 下可用）
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 300000,
+        })
+      })
+      lat = pos.coords.latitude
+      lon = pos.coords.longitude
+    } catch {
+      // 2) 浏览器定位失败/被拒时，使用免费 IP 定位服务
+      const ipRes = await fetch(
+        'https://ip-api.com/json/?fields=status,city,lat,lon&lang=zh-CN',
+      )
+      const ipData = await ipRes.json()
+      if (ipData.status === 'success') {
+        city = ipData.city || ''
+        lat = ipData.lat
+        lon = ipData.lon
+      }
+    }
+
+    if (lat === undefined || lon === undefined) {
+      throw new Error('无法获取当前位置')
+    }
+
+    // 3) 使用 Open-Meteo 免费天气接口（无需 API Key）
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode` +
+      `&timezone=auto&forecast_days=1`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('天气接口请求失败')
+    const data = await res.json()
+
+    const current = data.current_weather || {}
+    const daily = data.daily || {}
+    weather.city = city || data.timezone || '当前城市'
+    weather.currentTemp = current.temperature
+    weather.desc = wmoToChinese(current.weathercode)
+    weather.maxTemp = daily.temperature_2m_max?.[0]
+    weather.minTemp = daily.temperature_2m_min?.[0]
+  } catch {
+    weather.error = '天气获取失败'
+  } finally {
+    weather.loading = false
+  }
 }
 </script>
 

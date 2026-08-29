@@ -29,6 +29,8 @@ MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "123456")
 MILVUS_ENABLE = os.getenv("MILVUS_ENABLE", "1") == "1"
 MILVUS_HOST = os.getenv("MILVUS_HOST", "127.0.0.1")
 MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
+# 连接超时（秒）：本地未启动 Milvus 时快速失败并降级，避免阻塞启动。
+MILVUS_CONNECT_TIMEOUT = int(os.getenv("MILVUS_CONNECT_TIMEOUT", "3"))
 
 # ---- 聊天 / 向量化 ----
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
