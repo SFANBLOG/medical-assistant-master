@@ -620,19 +620,16 @@ async function loadWeather() {
       lat = pos.coords.latitude
       lon = pos.coords.longitude
     } catch {
-      // 2) 浏览器定位失败/被拒时，使用免费 IP 定位服务
-      const ipRes = await fetch(
-        'https://ip-api.com/json/?fields=status,city,lat,lon&lang=zh-CN',
-      )
+      // 2) 浏览器定位失败/被拒时，使用 geojs 免费 IP 定位获取经纬度
+      const ipRes = await fetch('https://get.geojs.io/v1/ip/geo.json')
       const ipData = await ipRes.json()
-      if (ipData.status === 'success') {
-        city = ipData.city || ''
-        lat = ipData.lat
-        lon = ipData.lon
-      }
+      lat = parseFloat(ipData.latitude)
+      lon = parseFloat(ipData.longitude)
+      // geojs 不返回城市名，用国家作为兜底描述
+      city = ipData.country === 'China' ? '当前位置' : ipData.country || '当前位置'
     }
 
-    if (lat === undefined || lon === undefined) {
+    if (lat === undefined || lon === undefined || Number.isNaN(lat) || Number.isNaN(lon)) {
       throw new Error('无法获取当前位置')
     }
 
@@ -647,7 +644,8 @@ async function loadWeather() {
 
     const current = data.current_weather || {}
     const daily = data.daily || {}
-    weather.city = city || data.timezone || '当前城市'
+    // 浏览器定位未拿到城市名时，用 Open-Meteo 返回的时区做兜底显示
+    weather.city = city || data.timezone?.replace(/_/g, ' ') || '当前位置'
     weather.currentTemp = current.temperature
     weather.desc = wmoToChinese(current.weathercode)
     weather.maxTemp = daily.temperature_2m_max?.[0]
