@@ -909,12 +909,27 @@ async function loadWeather() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
+  flex-wrap: wrap;
 }
 
 .input-tip {
   font-size: 12px;
   color: #c0c4cc;
+  line-height: 1.5;
+  flex: 1;
+  min-width: 220px;
+}
+
+.input-tip-divider {
+  margin: 0 6px;
+  opacity: 0.6;
+}
+
+.weather-icon {
+  margin-right: 2px;
+  vertical-align: -1px;
 }
 
 .send-icon {
