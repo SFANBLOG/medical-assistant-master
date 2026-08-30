@@ -18,7 +18,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backend import config
 from backend.utils.db import (
-    get_conn, execute, execute_many, fetchone, fetchall, init_schema, DB_TYPE
+    get_conn, execute, fetchone, fetchall, init_schema, DB_TYPE
 )
 from backend.rag.chunker import chunk_document
 from backend.rag.embedder import get_embedder

@@ -3,9 +3,7 @@
 约定：
 - 运行 backend/app.py 时，若使用 MySQL，会自动创建数据库
   `medical-assistant-master`（DATABASE_NAME）并执行建表 SQL（schema_mysql.sql）；
-- 常规请求使用 flask.g 作用域连接（get_conn），请求结束自动关闭；
-- SSE 流式生成器中使用独立连接（new_conn），并自行在 finally 中关闭，
-  避免长连接占用请求作用域连接、也避免跨线程共享连接。
+- 常规请求使用 flask.g 作用域连接（get_conn），请求结束自动关闭。
 
 两种数据库均返回兼容行对象：既支持 row["col"]，也支持 row[0] 与 dict(row)。
 """
@@ -311,8 +309,3 @@ def get_conn() -> sqlite3.Connection | MysqlConn:
     return g.db
 
 
-def new_conn() -> sqlite3.Connection | MysqlConn:
-    """独立新连接（供 SSE 生成器使用）。"""
-    from flask import current_app
-
-    return connect(current_app.config)

@@ -212,19 +212,6 @@ def _run_offline(question: str, state: dict, role_key: str, memory_ctx: str) -> 
     yield from _emit_final(answer, state)
 
 
-def _find_patient_name(question: str) -> Optional[str]:
-    """在问题中匹配已存在的患者姓名（演示用：从用户表取姓名做子串匹配）。"""
-    try:
-        rows = fetchall("SELECT name FROM users WHERE role = 'patient' LIMIT 200")
-        for r in rows:
-            name = (r.get("name") or "").strip()
-            if name and len(name) >= 2 and name in question:
-                return name
-    except Exception:  # noqa: BLE001
-        return None
-    return None
-
-
 def _synthesize(question: str, context: str, role_key: str = "knowledge", memory_ctx: str = "") -> str:
     """离线合成最终回答（抽取式，不调用大模型）。"""
     role_label = roles.get_role(role_key)["label"]

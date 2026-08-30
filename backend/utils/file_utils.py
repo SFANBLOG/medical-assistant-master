@@ -1,14 +1,5 @@
 """文件文本抽取：根据扩展名解析为纯文本。"""
 import os
-import re
-
-_PATH_SEP_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
-
-
-def safe_folder_name(name: str, fallback: str = "") -> str:
-    """把任意名称清洗为安全的文件夹名（替换路径分隔符与非法字符）。"""
-    cleaned = _PATH_SEP_RE.sub("_", name or "").strip().strip(". ")
-    return cleaned or fallback
 
 
 def extract_text(file_path: str) -> str:

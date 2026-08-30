@@ -113,13 +113,6 @@ def execute(sql: str, args: tuple = (), commit: bool = True) -> int:
         return cur.rowcount
 
 
-def execute_many(sql: str, args_list, commit: bool = True) -> int:
-    """批量执行，返回受影响行数。"""
-    with db_cursor(commit=commit) as cur:
-        cur.executemany(_placeholder(sql), args_list)
-        return cur.rowcount
-
-
 def fetchone(sql: str, args: tuple = ()) -> Optional[dict]:
     """查询单行，返回 dict 或 None。"""
     with db_cursor(commit=False) as cur:

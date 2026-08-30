@@ -98,22 +98,6 @@ class CrossEncoderReranker:
         self.w_lexical = w_lexical
         self._model = None  # 预留：真实 Cross-Encoder 模型
 
-    # ---- 可插拔真实模型（环境具备时启用）----
-    def load_model(self, model_path: str) -> bool:
-        """
-        加载真实 Cross-Encoder 重排模型（如 BAAI/bge-reranker-v2-m3）。
-        加载成功后 rerank 将改走模型交互打分，相关性更强。
-        返回是否加载成功。
-        """
-        try:
-            from sentence_transformers import CrossEncoder  # type: ignore
-            self._model = CrossEncoder(model_path)
-            return True
-        except Exception as e:  # noqa: BLE001
-            print(f"[Reranker] 真实 Cross-Encoder 加载失败，回退融合打分: {e}")
-            self._model = None
-            return False
-
     def _model_score(self, query: str, text: str) -> float:
         """真实模型打分（归一化到 [0,1]）。"""
         raw = self._model.predict([(query, text)])  # type: ignore

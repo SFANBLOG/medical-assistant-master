@@ -304,11 +304,6 @@ def parse_file_pages(file_path: str) -> list[tuple[int, str]]:
     return [(1, parse_file(file_path))]
 
 
-def _ocr_pdf_pages(file_path: str, dpi: int = 160) -> str:
-    """把 PDF 每页渲染成图片再 OCR（用于扫描件），返回拼接后的整篇文本。"""
-    return "\n\n".join(t for _, t in _ocr_pdf_pages_list(file_path, dpi))
-
-
 def _ocr_pdf_pages_list(file_path: str, dpi: int = 160) -> list[tuple[int, str]]:
     """把 PDF 每页渲染成图片再 OCR，返回 [(page_no, text)]。"""
     import os

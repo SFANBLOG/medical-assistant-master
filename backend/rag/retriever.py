@@ -53,13 +53,6 @@ def _ensure_bm25() -> Optional[BM25Index]:
         return None
 
 
-def rebuild_bm25() -> None:
-    """向量库内容变化后强制重建 BM25 索引（如重新索引文档后调用）。"""
-    global _bm25_index, _bm25_built_for_count
-    _bm25_index = None
-    _bm25_built_for_count = -1
-
-
 def retrieve(
     query: str,
     role: str,
