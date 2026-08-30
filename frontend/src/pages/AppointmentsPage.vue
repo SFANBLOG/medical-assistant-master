@@ -8,33 +8,33 @@
           <el-col :xs="24" :md="8">
             <el-form-item label="就诊科室" required>
               <el-select v-model="form.department" placeholder="选择科室" style="width: 100%">
-                <el-option v-for="d in DEPARTMENTS" :key="d" :value="d" :label="d" />
+                <el-option v-for="d in DEPARTMENTS" :key="d" :value="d" :label="d"/>
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="8">
             <el-form-item label="选择医生（选填）">
               <el-select v-model="form.doctor_id" clearable placeholder="不选由科室随机排号" style="width: 100%">
-                <el-option v-for="d in doctors" :key="d.id" :value="d.id" :label="d.display_name || d.username" />
+                <el-option v-for="d in doctors" :key="d.id" :value="d.id" :label="d.display_name || d.username"/>
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="8">
             <el-form-item label="就诊日期" required>
               <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期"
-                :disabled-date="disabledDate" style="width: 100%" />
+                              :disabled-date="disabledDate" style="width: 100%"/>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="8">
             <el-form-item label="就诊时段" required>
               <el-select v-model="form.time_slot" placeholder="选择时段" style="width: 100%">
-                <el-option v-for="s in SLOTS" :key="s" :value="s" :label="s" />
+                <el-option v-for="s in SLOTS" :key="s" :value="s" :label="s"/>
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="16">
             <el-form-item label="主诉/症状（选填）">
-              <el-input v-model="form.symptom" placeholder="简单描述症状，便于医生提前了解" />
+              <el-input v-model="form.symptom" placeholder="简单描述症状，便于医生提前了解"/>
             </el-form-item>
           </el-col>
         </el-row>
@@ -43,21 +43,22 @@
     </el-card>
 
     <el-table :data="items" v-loading="loading" size="small" row-key="id">
-      <el-table-column label="科室" prop="department" width="110" />
-      <el-table-column label="日期" prop="date" width="120" />
-      <el-table-column label="时段" prop="time_slot" width="110" />
+      <el-table-column label="科室" prop="department" width="110"/>
+      <el-table-column label="日期" prop="date" width="120"/>
+      <el-table-column label="时段" prop="time_slot" width="110"/>
       <el-table-column label="医生" width="100">
         <template #default="{ row }">{{ row.doctor_name || '-' }}</template>
       </el-table-column>
-      <el-table-column label="主诉" prop="symptom" min-width="120" show-overflow-tooltip />
-      <el-table-column label="挂号费(元)" prop="fee" width="110" align="right" />
+      <el-table-column label="主诉" prop="symptom" min-width="120" show-overflow-tooltip/>
+      <el-table-column label="挂号费(元)" prop="fee" width="110" align="right"/>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">{{ APPT_STATUS_LABELS[row.status] ?? row.status }}</template>
       </el-table-column>
       <el-table-column label="操作" width="90">
         <template #default="{ row }">
           <el-button v-if="row.status !== 'cancelled' && row.status !== 'visited'" size="small" type="danger" link
-            @click="cancel(row.id)">取消</el-button>
+                     @click="cancel(row.id)">取消
+          </el-button>
           <span v-else>-</span>
         </template>
       </el-table-column>

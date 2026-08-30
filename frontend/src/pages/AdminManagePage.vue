@@ -4,19 +4,25 @@
     <el-tabs v-model="tab">
       <el-tab-pane label="用户管理" name="users">
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap">
-          <el-input v-model="q" placeholder="搜索用户名/姓名" clearable style="width: 220px" @keyup.enter="doSearch" />
+          <el-input v-model="q" placeholder="搜索用户名/姓名" clearable style="width: 220px" @keyup.enter="doSearch"/>
           <el-select v-model="roleFilter" clearable placeholder="按身份筛选" style="width: 140px" @change="doSearch">
-            <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label" />
+            <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label"/>
           </el-select>
-          <el-button type="primary" @click="createOpen = true"><el-icon><Plus /></el-icon>&nbsp;新建用户</el-button>
+          <el-button type="primary" @click="createOpen = true">
+            <el-icon>
+              <Plus/>
+            </el-icon>&nbsp;新建用户
+          </el-button>
         </div>
 
         <el-table :data="items" v-loading="loading" row-key="id">
-          <el-table-column label="ID" prop="id" width="60" />
-          <el-table-column label="用户名" prop="username" width="150" />
-          <el-table-column label="姓名" prop="display_name" width="130" />
+          <el-table-column label="ID" prop="id" width="60"/>
+          <el-table-column label="用户名" prop="username" width="150"/>
+          <el-table-column label="姓名" prop="display_name" width="130"/>
           <el-table-column label="身份" width="90">
-            <template #default="{ row }"><el-tag :type="ROLE_TAG_TYPES[row.role]">{{ ROLE_LABELS[row.role] }}</el-tag></template>
+            <template #default="{ row }">
+              <el-tag :type="ROLE_TAG_TYPES[row.role]">{{ ROLE_LABELS[row.role] }}</el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="注册时间" width="170">
             <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
@@ -29,24 +35,24 @@
           </el-table-column>
         </el-table>
         <el-pagination v-model:current-page="page" :page-size="10" :total="total" layout="prev, pager, next, total"
-          style="margin-top: 16px; justify-content: flex-end" @current-change="load" />
+                       style="margin-top: 16px; justify-content: flex-end" @current-change="load"/>
 
         <!-- 新建用户 -->
         <el-dialog v-model="createOpen" title="新建用户" width="440px">
           <el-form :model="createForm" label-position="top">
             <el-form-item label="用户名" required>
-              <el-input v-model="createForm.username" placeholder="3-32 个字符" />
+              <el-input v-model="createForm.username" placeholder="3-32 个字符"/>
             </el-form-item>
             <el-form-item label="姓名/昵称">
-              <el-input v-model="createForm.display_name" placeholder="选填" />
+              <el-input v-model="createForm.display_name" placeholder="选填"/>
             </el-form-item>
             <el-form-item label="身份" required>
               <el-select v-model="createForm.role" style="width: 100%">
-                <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label" />
+                <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label"/>
               </el-select>
             </el-form-item>
             <el-form-item label="密码" required>
-              <el-input v-model="createForm.password" type="password" placeholder="至少 6 位" show-password />
+              <el-input v-model="createForm.password" type="password" placeholder="至少 6 位" show-password/>
             </el-form-item>
           </el-form>
           <template #footer>
@@ -60,14 +66,14 @@
           <el-form :model="editForm" label-position="top">
             <el-form-item label="身份" required>
               <el-select v-model="editForm.role" style="width: 100%">
-                <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label" />
+                <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :value="value" :label="label"/>
               </el-select>
             </el-form-item>
             <el-form-item label="姓名/昵称">
-              <el-input v-model="editForm.display_name" />
+              <el-input v-model="editForm.display_name"/>
             </el-form-item>
             <el-form-item label="重置密码（留空则不修改）">
-              <el-input v-model="editForm.reset_password" type="password" placeholder="至少 6 位" show-password />
+              <el-input v-model="editForm.reset_password" type="password" placeholder="至少 6 位" show-password/>
             </el-form-item>
           </el-form>
           <template #footer>
@@ -79,14 +85,46 @@
 
       <el-tab-pane label="系统看板" name="stats">
         <el-row :gutter="16">
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="用户总数" :value="stats?.user_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="知识库" :value="stats?.kb_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="文档" :value="stats?.doc_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="向量切片" :value="stats?.chunk_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="咨询会话" :value="stats?.conversation_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="消息总数" :value="stats?.message_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="住院记录" :value="stats?.hospitalization_count ?? 0" /></el-card></el-col>
-          <el-col :xs="12" :md="8" :lg="4"><el-card><el-statistic title="消费总额(元)" :value="stats?.bill_total ?? 0" /></el-card></el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="用户总数" :value="stats?.user_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="知识库" :value="stats?.kb_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="文档" :value="stats?.doc_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="向量切片" :value="stats?.chunk_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="咨询会话" :value="stats?.conversation_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="消息总数" :value="stats?.message_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="住院记录" :value="stats?.hospitalization_count ?? 0"/>
+            </el-card>
+          </el-col>
+          <el-col :xs="12" :md="8" :lg="4">
+            <el-card>
+              <el-statistic title="消费总额(元)" :value="stats?.bill_total ?? 0"/>
+            </el-card>
+          </el-col>
         </el-row>
       </el-tab-pane>
     </el-tabs>
@@ -120,11 +158,11 @@ const page = ref(1)
 const loading = ref(false)
 
 const createOpen = ref(false)
-const createForm = reactive({ username: '', display_name: '', role: 'patient' as Role, password: '' })
+const createForm = reactive({username: '', display_name: '', role: 'patient' as Role, password: ''})
 
 const editOpen = ref(false)
 const editId = ref<number | null>(null)
-const editForm = reactive({ role: 'patient' as Role, display_name: '', reset_password: '' })
+const editForm = reactive({role: 'patient' as Role, display_name: '', reset_password: ''})
 
 const stats = ref<AdminStats | null>(null)
 
@@ -135,7 +173,7 @@ function formatTime(v: string) {
 async function load() {
   loading.value = true
   try {
-    const d = await adminApi.users({ role: roleFilter.value || undefined, q: q.value, page: page.value, page_size: 10 })
+    const d = await adminApi.users({role: roleFilter.value || undefined, q: q.value, page: page.value, page_size: 10})
     items.value = d.items
     total.value = d.total
   } catch (e) {
@@ -147,7 +185,8 @@ async function load() {
 
 onMounted(() => {
   load()
-  adminApi.stats().then((s) => (stats.value = s as AdminStats)).catch(() => {})
+  adminApi.stats().then((s) => (stats.value = s as AdminStats)).catch(() => {
+  })
 })
 
 function doSearch() {
@@ -161,7 +200,7 @@ async function createUser() {
     return
   }
   try {
-    await adminApi.createUser({ ...createForm })
+    await adminApi.createUser({...createForm})
     ElMessage.success('用户已创建')
     createOpen.value = false
     createForm.username = ''
@@ -184,7 +223,7 @@ function openEdit(row: AdminUserRow) {
 async function editUser() {
   if (editId.value == null) return
   try {
-    await adminApi.updateUser(editId.value, { ...editForm, reset_password: editForm.reset_password || undefined })
+    await adminApi.updateUser(editId.value, {...editForm, reset_password: editForm.reset_password || undefined})
     ElMessage.success('用户已更新')
     editOpen.value = false
     load()
