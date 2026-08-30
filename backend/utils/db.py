@@ -254,3 +254,39 @@ def _run_hitl_migrations():
         _col_type = "TEXT NULL" if DB_TYPE == "sqlite" else "TEXT NULL COMMENT 'Agent ReAct 轨迹(JSON)'"
         execute(f"ALTER TABLE messages ADD COLUMN agent_steps {_col_type}")
         print("[DB] messages.agent_steps 迁移完成")
+
+    # ---- appointment_requests 表（写操作 HITL：预约请求先复核后建单）----
+    _appt_cols = (
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "conversation_id VARCHAR(64) NULL, "
+        "user_id INTEGER NOT NULL, "
+        "request_json TEXT NOT NULL, "
+        "review_status VARCHAR(16) NOT NULL DEFAULT 'pending', "
+        "reviewer_id INTEGER NULL, "
+        "reviewed_at DATETIME NULL, "
+        "review_note VARCHAR(512) NULL, "
+        "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    ) if DB_TYPE == "sqlite" else (
+        "id INT PRIMARY KEY AUTO_INCREMENT, "
+        "conversation_id VARCHAR(64) NULL, "
+        "user_id INT NOT NULL, "
+        "request_json TEXT NOT NULL, "
+        "review_status VARCHAR(16) NOT NULL DEFAULT 'pending', "
+        "reviewer_id INT NULL, "
+        "reviewed_at DATETIME NULL, "
+        "review_note VARCHAR(512) NULL, "
+        "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    )
+    try:
+        execute(f"CREATE TABLE IF NOT EXISTS appointment_requests ({_appt_cols})")
+        # 兼容旧表：补 review 相关列
+        for _col, _typ in [
+            ("reviewer_id", "INTEGER NULL" if DB_TYPE == "sqlite" else "INT NULL"),
+            ("reviewed_at", "DATETIME NULL"),
+            ("review_note", "VARCHAR(512) NULL"),
+        ]:
+            if not _column_exists("appointment_requests", _col):
+                execute(f"ALTER TABLE appointment_requests ADD COLUMN {_col} {_typ}")
+        print("[DB] appointment_requests 迁移完成")
+    except Exception as e:  # noqa: BLE001
+        print(f"[DB] appointment_requests 迁移跳过：{e}")

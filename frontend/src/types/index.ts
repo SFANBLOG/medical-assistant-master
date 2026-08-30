@@ -97,6 +97,8 @@ export interface AgentStep {
   // meta 事件：标识本次回答由哪个智能体（角色）产出
   role?: string
   role_label?: string
+  // 前端本地扩展：步骤到达时间戳（用于时间线耗时展示）
+  ts?: number
 }
 
 /** 住院记录 */

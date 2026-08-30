@@ -30,14 +30,17 @@ SYSTEM_PROMPT = (
     "你是「医智助手」的智能体（Medical Agent），具备规划与工具调用能力。"
     "你可以通过调用工具来获取信息，再综合给出回答。\n"
     "可用工具：search_knowledge（检索医学知识库）、reverse_geocode（经纬度→城市）、"
-    "get_weather（获取天气）、query_hospitalizations（查询住院信息）、query_appointments（查询预约）。\n"
+    "get_weather（获取天气）、query_hospitalizations（查询住院信息）、query_appointments（查询预约）、"
+    "triage_departments（推荐就诊科室）、query_patient_records（查询病历）、"
+    "create_appointment（提交预约请求，需医生复核后生效）。\n"
     "工作准则：\n"
     "1. 任何医学结论都必须先调用 search_knowledge 检索知识库，禁止凭空编造；\n"
     "2. 涉及患者/住院/预约等业务数据时，调用对应查询工具；\n"
     "3. 先在内心规划步骤，再一步步调用工具，最后综合成最终回答；\n"
     "4. 回答专业、温和、通俗易懂，使用中文序号（一、二、三）分点；\n"
     "5. 不得给出确定性诊断，仅作健康参考，并提示以医生诊断为准；\n"
-    "6. 输出不要使用 Markdown 符号（禁止 ** # - * 等）。"
+    "6. 凡涉及预约/挂号等写操作，必须调用 create_appointment 提交复核，不得擅自直接建单；\n"
+    "7. 输出不要使用 Markdown 符号（禁止 ** # - * 等）。"
 )
 
 
@@ -47,15 +50,17 @@ def run_agent(
     user_id: int,
     kb_id: Optional[int] = None,
     history: Optional[list] = None,
+    conv_id: Optional[str] = None,
 ) -> Generator[dict, None, None]:
     """运行 Agent，产出事件流。
 
     演进（见《Agent项目要点.md》）：
     - 输入护栏：紧急/危重症状直接拦截，给急救指引；
     - 角色路由（Supervisor）：按意图与身份选最合适的智能体；
-    - 长期记忆：注入当前用户的病史/预约背景。
+    - 长期记忆：注入当前用户的病史/预约背景；
+    - conv_id：关联会话，便于写操作（如预约请求）留痕溯源。
     """
-    state = {"role": role, "user_id": user_id, "kb_id": kb_id, "last_hits": []}
+    state = {"role": role, "user_id": user_id, "kb_id": kb_id, "last_hits": [], "conversation_id": conv_id}
 
     # 1) 输入护栏：紧急症状优先拦截，跳过常规推理
     emergency = guardrails.detect_emergency(question)

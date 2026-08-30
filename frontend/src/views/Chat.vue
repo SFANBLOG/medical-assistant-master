@@ -498,6 +498,16 @@ async function streamChat(convId: string, question: string, aiMsg: Message) {
           content: typeof data.content === 'string' ? data.content : undefined,
           name: typeof data.name === 'string' ? data.name : undefined,
           args: (data.args as Record<string, unknown>) || undefined,
+          ts: Date.now(),
+        })
+      } else if (evtType === 'meta') {
+        // 角色路由事件：标识本次回答由哪个智能体产出（导诊/医生/护士/知识/护栏）
+        if (!aiMsg.agentSteps) aiMsg.agentSteps = []
+        aiMsg.agentSteps.push({
+          type: 'meta',
+          role: typeof data.role === 'string' ? data.role : undefined,
+          role_label: typeof data.role_label === 'string' ? data.role_label : undefined,
+          ts: Date.now(),
         })
       } else if (evtType === 'message' || (!evtType && typeof data.content === 'string' && data.content)) {
         // 最终回答增量（智能体 message 事件 / 普通聊天 content 字段）
@@ -510,7 +520,7 @@ async function streamChat(convId: string, question: string, aiMsg: Message) {
         if (!aiMsg.content) aiMsg.content = data.error
         if (evtType) {
           if (!aiMsg.agentSteps) aiMsg.agentSteps = []
-          aiMsg.agentSteps.push({ type: 'error', content: data.error })
+          aiMsg.agentSteps.push({ type: 'error', content: data.error, ts: Date.now() })
         }
       }
       if (data.done === true || evtType === 'done') {

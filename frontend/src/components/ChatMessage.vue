@@ -6,10 +6,11 @@
     </div>
 
     <div class="bubble-wrap">
-      <!-- Agent 角色标识：回答由哪个智能体产出，一目了然 -->
+      <!-- Agent 角色标识：回答由哪个智能体产出，一目了然（按角色配色） -->
       <div
         v-if="message.role === 'assistant' && agentRoleLabel"
         class="agent-role-badge"
+        :style="badgeStyle"
       >
         <el-icon><Cpu /></el-icon>
         <span>{{ agentRoleLabel }}</span>
@@ -52,29 +53,35 @@
               class="step-item"
               :class="s.type"
             >
-              <template v-if="s.type === 'thought'">
-                <span class="step-tag think">思考</span>
-                <span class="step-body">{{ s.content }}</span>
-              </template>
-              <template v-else-if="s.type === 'tool_call'">
-                <span class="step-tag tool">工具</span>
-                <span class="step-body">
-                  <b>{{ s.name }}</b>
-                  <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
-                </span>
-              </template>
-              <template v-else-if="s.type === 'observation'">
-                <span class="step-tag obs">观察</span>
-                <span class="step-body">{{ s.content }}</span>
-              </template>
-              <template v-else-if="s.type === 'error'">
-                <span class="step-tag err">错误</span>
-                <span class="step-body">{{ s.content }}</span>
-              </template>
-              <template v-else-if="s.type === 'meta'">
-                <span class="step-tag meta">智能体</span>
-                <span class="step-body">{{ s.role_label }}</span>
-              </template>
+              <div class="step-rail">
+                <span class="step-dot" :style="{ background: stepColor(s) }"></span>
+                <span
+                  v-if="i < message.agentSteps.length - 1"
+                  class="step-line"
+                ></span>
+              </div>
+              <div class="step-content">
+                <div class="step-head">
+                  <span class="step-tag" :style="{ background: stepColor(s) }">
+                    {{ stepLabel(s) }}
+                  </span>
+                  <span v-if="stepElapsed(s)" class="step-time">{{ stepElapsed(s) }}</span>
+                </div>
+                <div class="step-body">
+                  <template v-if="s.type === 'tool_call'">
+                    <b>{{ s.name }}</b>
+                    <el-tag
+                      v-if="s.name === 'search_knowledge'"
+                      size="small"
+                      type="success"
+                      effect="plain"
+                      class="tool-retrieve"
+                    >检索</el-tag>
+                    <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
+                  </template>
+                  <template v-else>{{ s.content }}</template>
+                </div>
+              </div>
             </div>
           </div>
         </el-collapse-transition>
@@ -123,7 +130,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Cpu, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
-import type { Message } from '@/types'
+import type { Message, AgentStep } from '@/types'
 import { renderRichText } from '@/utils/richtext'
 
 const props = defineProps<{ message: Message }>()
@@ -138,6 +145,79 @@ const agentRoleLabel = computed(() => {
   const meta = steps.find((s) => s.type === 'meta')
   return meta?.role_label || ''
 })
+
+// 提取 meta 事件中的角色 key（导诊/医生/护士/知识/护栏），用于配色
+const agentRoleKey = computed(() => {
+  const steps = props.message.agentSteps
+  if (!steps || steps.length === 0) return ''
+  const meta = steps.find((s) => s.type === 'meta')
+  return meta?.role || ''
+})
+
+// 角色 → 主题色（与后端 roles.py 的 label 语义一致）
+const ROLE_COLORS: Record<string, string> = {
+  guardrail: '#e74c3c', // 安全护栏：红
+  triage: '#16a085', // 导诊：青
+  doctor: '#27ae60', // 医生：绿
+  nurse: '#8e44ad', // 护士：紫
+  knowledge: '#2980b9', // 知识：蓝
+}
+const DEFAULT_ROLE_COLOR = '#e67e22'
+
+// 步骤类型 → 标签 / 颜色
+const TYPE_LABELS: Record<string, string> = {
+  thought: '思考',
+  tool_call: '工具',
+  observation: '观察',
+  error: '错误',
+  meta: '智能体',
+}
+const TYPE_COLORS: Record<string, string> = {
+  thought: '#8e44ad',
+  tool_call: '#409eff',
+  observation: '#67c23a',
+  error: '#f56c6c',
+  meta: '#e67e22',
+}
+
+function roleColor(role?: string): string {
+  if (role && ROLE_COLORS[role]) return ROLE_COLORS[role]
+  return DEFAULT_ROLE_COLOR
+}
+
+// 角色徽标配色（文字 + 浅底 + 浅边框，hex + alpha）
+const badgeStyle = computed(() => {
+  const c = roleColor(agentRoleKey.value || undefined)
+  return {
+    color: c,
+    background: c + '1a',
+    borderColor: c + '55',
+  }
+})
+
+function stepColor(s: AgentStep): string {
+  if (s.type === 'meta' && s.role && ROLE_COLORS[s.role]) return ROLE_COLORS[s.role]
+  return TYPE_COLORS[s.type] || '#909399'
+}
+
+function stepLabel(s: AgentStep): string {
+  if (s.type === 'meta' && s.role_label) return s.role_label
+  return TYPE_LABELS[s.type] || s.type
+}
+
+// 时间线耗时：相对首步的时间偏移
+const firstTs = computed(() => {
+  const steps = props.message.agentSteps || []
+  const t = steps.find((s) => s.ts)?.ts
+  return t
+})
+
+function stepElapsed(s: AgentStep): string {
+  if (!s.ts || !firstTs.value) return ''
+  const d = (s.ts - firstTs.value) / 1000
+  if (d <= 0) return ''
+  return `+${d.toFixed(1)}s`
+}
 
 // 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
 const renderedHtml = computed(() =>
@@ -350,23 +430,61 @@ function formatSimilarity(v: number | undefined): string {
   transition: transform 0.2s;
 }
 
+/* 竖向时间线 */
 .step-list {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .step-item {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: stretch;
   font-size: 12px;
   line-height: 1.6;
+  padding: 2px 0;
+}
+
+.step-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+
+.step-line {
+  flex: 1;
+  width: 2px;
+  background: #e4e7ed;
+  margin: 2px 0;
+}
+
+.step-content {
+  flex: 1;
+  min-width: 0;
   background: #faf7fc;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  padding: 7px 10px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .step-tag {
@@ -378,24 +496,10 @@ function formatSimilarity(v: number | undefined): string {
   color: #fff;
 }
 
-.step-tag.think {
-  background: #8e44ad;
-}
-
-.step-tag.tool {
-  background: #409eff;
-}
-
-.step-tag.obs {
-  background: #67c23a;
-}
-
-.step-tag.err {
-  background: #f56c6c;
-}
-
-.step-tag.meta {
-  background: #e67e22;
+.step-time {
+  font-size: 11px;
+  color: #b0b3b8;
+  font-variant-numeric: tabular-nums;
 }
 
 .step-body {
@@ -413,6 +517,10 @@ function formatSimilarity(v: number | undefined): string {
   font-size: 11px;
   color: #555;
   word-break: break-all;
+}
+
+.tool-retrieve {
+  margin-left: 6px;
 }
 
 .cite-toggle {

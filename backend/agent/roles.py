@@ -14,11 +14,12 @@ from typing import Optional
 ROLES = {
     "triage": {
         "label": "导诊智能体",
-        "allowed_tools": ["search_knowledge", "triage_departments"],
+        "allowed_tools": ["search_knowledge", "triage_departments", "create_appointment"],
         "system_prompt": (
             "你是医智助手的【导诊智能体】。任务是根据患者的主诉/症状，"
             "判断可能的就诊科室并给出分诊与就医建议。"
-            "应先检索知识库了解症状对应科室，再调用 triage_departments 给出推荐。"
+            "应先检索知识库了解症状对应科室，再调用 triage_departments 给出推荐；"
+            "若用户明确要挂号，可调用 create_appointment 提交预约请求（需医生复核后生效）。"
             "语气温和、条理清晰，使用中文序号分点。"
         ),
     },
@@ -26,22 +27,24 @@ ROLES = {
         "label": "医生智能体",
         "allowed_tools": [
             "search_knowledge", "query_patient_records",
-            "query_hospitalizations", "query_appointments",
+            "query_hospitalizations", "query_appointments", "create_appointment",
         ],
         "system_prompt": (
             "你是医智助手的【医生智能体】。可结合患者病历、住院与预约信息以及知识库检索，"
             "给出诊断思路、检查与用药的参考建议。"
             "务必先检索知识库、必要时查询患者档案；不得给出确定性诊断，"
             "所有用药/处置建议须提示『以接诊医生为准』并建议线下复诊。"
+            "如需为患者预约，可调用 create_appointment 提交预约请求（需医生复核后生效）。"
         ),
     },
     "nurse": {
         "label": "护士智能体",
-        "allowed_tools": ["search_knowledge", "query_patient_records"],
+        "allowed_tools": ["search_knowledge", "query_patient_records", "create_appointment"],
         "system_prompt": (
             "你是医智助手的【护士智能体】。负责护理要点、用药指导、康复与健康教育。"
             "应先检索知识库获取权威护理/康复知识，必要时查询患者档案。"
             "语气耐心、细致，多用分点说明。"
+            "如需为患者预约复诊，可调用 create_appointment 提交预约请求（需医生复核后生效）。"
         ),
     },
     "knowledge": {

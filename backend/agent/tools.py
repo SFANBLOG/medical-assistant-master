@@ -1,6 +1,7 @@
 """
 Agent 工具抽象层（Tool Abstraction）。
 
+
 每个工具对外暴露：
   - name        : 工具名（LLM 调用时使用的标识）
   - description : 给 LLM 看的自然语言说明（决定它何时被选用）
@@ -11,6 +12,7 @@ Agent 工具抽象层（Tool Abstraction）。
 （role / user_id / kb_id / 最近一次检索结果 last_hits 等），
 从而在不破坏无状态接口的前提下访问用户态与共享记忆。
 """
+import json
 from typing import Callable, Optional
 
 import requests
@@ -18,7 +20,7 @@ import requests
 from backend import config
 from backend.rag.retriever import retrieve, build_context
 from backend.rag.llm import _clean_answer_text
-from backend.utils.db import fetchall
+from backend.utils.db import fetchall, fetchone, execute
 
 
 class Tool:
@@ -256,6 +258,67 @@ def _query_patient_records(state: dict, keyword: str = "") -> str:
     return "病历汇总：\n" + "\n".join(lines)
 
 
+def _create_appointment(
+    state: dict,
+    department: str,
+    date: str,
+    time_slot: str,
+    doctor_id: int = None,
+    symptom: str = "",
+    patient_name: str = "",
+    patient_id: int = None,
+) -> str:
+    """提交预约挂号请求（写操作，需医生复核后才生效）。
+
+    该工具**不会**直接写入 appointments 表，而是写入 appointment_requests
+    （review_status='pending'），由医生在 /api/review/appointments 复核通过后才真正建单。
+    这是《Agent项目要点.md》§6「动作护栏：写操作需 human_review + 审计落库」的落地。
+    """
+    department = (department or "").strip()
+    date = (date or "").strip()
+    time_slot = (time_slot or "").strip()
+    if not department or not date or not time_slot:
+        return "预约请求失败：科室、就诊日期、时段均为必填。"
+
+    # 解析预约人（患者）。医护代约时必须指明患者。
+    role = state.get("role", "patient")
+    if role in ("doctor", "nurse", "admin"):
+        pid = patient_id if isinstance(patient_id, int) else None
+        if not pid and patient_name:
+            row = fetchone(
+                "SELECT id FROM users WHERE name LIKE %s AND role='patient' LIMIT 1",
+                (f"%{patient_name}%",),
+            )
+            pid = row["id"] if row else None
+        if not pid:
+            return "预约请求失败：请指明预约患者（patient_name 或 patient_id），以便医生复核。"
+    else:
+        pid = patient_id if isinstance(patient_id, int) else state.get("user_id")
+
+    payload = {
+        "patient_id": pid,
+        "doctor_id": doctor_id if isinstance(doctor_id, int) else None,
+        "department": department,
+        "date": date,
+        "time_slot": time_slot,
+        "symptom": (symptom or "").strip(),
+    }
+    execute(
+        "INSERT INTO appointment_requests (conversation_id, user_id, request_json, review_status) "
+        "VALUES (%s, %s, %s, 'pending')",
+        (state.get("conversation_id"), pid, json.dumps(payload, ensure_ascii=False)),
+    )
+    req = fetchone(
+        "SELECT id FROM appointment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 1",
+        (pid,),
+    )
+    req_id = req["id"] if req else "?"
+    return (
+        f"已生成预约请求 #{req_id}（科室：{department}，日期：{date}，时段：{time_slot}），"
+        f"已提交医生复核，待批准后正式生效。请勿重复提交。"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 工具注册表
 # ---------------------------------------------------------------------------
@@ -353,6 +416,27 @@ TOOLS: list[Tool] = [
             "required": [],
         },
         func=_query_patient_records,
+    ),
+    Tool(
+        name="create_appointment",
+        description=(
+            "提交预约挂号请求（写操作，需医生复核）。将预约需求（科室/日期/时段/症状）"
+            "提交给医生复核，医生批准后才会正式建立预约。适用于患者自助预约或医护代为预约。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "department": {"type": "string", "description": "就诊科室，如 骨科 / 心血管内科"},
+                "date": {"type": "string", "description": "就诊日期，如 2026-09-01"},
+                "time_slot": {"type": "string", "description": "就诊时段，如 上午 / 09:00-09:30"},
+                "doctor_id": {"type": "integer", "description": "可选：指定医生 id"},
+                "symptom": {"type": "string", "description": "可选：主诉/症状"},
+                "patient_name": {"type": "string", "description": "可选：医护代约时填写的患者姓名"},
+                "patient_id": {"type": "integer", "description": "可选：医护代约时填写的患者 id"},
+            },
+            "required": ["department", "date", "time_slot"],
+        },
+        func=_create_appointment,
     ),
 ]
 

@@ -52,7 +52,7 @@ def agent_stream_sse(
     full_answer: list = []
     citations: list = []
 
-    for event in run_agent(question, role, user_id, kb_id, history=_get_history(conv_id)):
+    for event in run_agent(question, role, user_id, kb_id, history=_get_history(conv_id), conv_id=conv_id):
         steps.append(event)
 
         if event["type"] == "citations":
