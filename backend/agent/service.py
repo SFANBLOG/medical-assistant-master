@@ -65,10 +65,15 @@ def agent_stream_sse(
 
     # 3. 保存 AI 回答 + ReAct 轨迹（可观测）
     answer_text = _clean_answer_text("".join(full_answer))
+
+    # HITL 复核状态：患者/群众得到的 Agent 医疗建议进入「待复核」队列，
+    # 由医生在 /api/review 复核；医护/admin 自身使用的回答默认已复核。
+    review_status = "pending" if role in ("patient", "public") else "approved"
+
     execute(
-        "INSERT INTO messages (conversation_id, role, content, agent_steps) "
-        "VALUES (%s, 'assistant', %s, %s)",
-        (conv_id, answer_text, json.dumps(steps, ensure_ascii=False)),
+        "INSERT INTO messages (conversation_id, role, content, agent_steps, review_status) "
+        "VALUES (%s, 'assistant', %s, %s, %s)",
+        (conv_id, answer_text, json.dumps(steps, ensure_ascii=False), review_status),
     )
     msg_row = fetchone(
         "SELECT id FROM messages WHERE conversation_id = %s AND role = 'assistant' "
