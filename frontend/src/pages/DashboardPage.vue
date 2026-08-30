@@ -93,11 +93,11 @@ import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import type {EChartsOption} from 'echarts'
-import EChart from '../components/EChart.vue'
-import {dashboardApi} from '../api/endpoints'
-import {useAuth} from '../stores/auth'
-import type {DashboardStats, RecentConversation, Role} from '../types'
-import {ROLE_LABELS, ROLE_TAG_TYPES} from '../types'
+import EChart from '@/components/EChart.vue'
+import {dashboardApi} from '@/api/endpoints'
+import {useAuth} from '@/stores/auth'
+import type {DashboardStats, RecentConversation, Role} from '@/types'
+import {ROLE_LABELS, ROLE_TAG_TYPES} from '@/types'
 
 const auth = useAuth()
 const router = useRouter()

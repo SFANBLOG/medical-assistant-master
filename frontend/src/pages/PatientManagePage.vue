@@ -35,9 +35,9 @@
 <script setup lang="ts">
 import {onMounted, ref} from 'vue'
 import {ElMessage} from 'element-plus'
-import PatientHospitals from '../components/PatientHospitals.vue'
-import {doctorApi} from '../api/endpoints'
-import type {PatientSummary} from '../types'
+import PatientHospitals from '@/components/PatientHospitals.vue'
+import {doctorApi} from '@/api/endpoints'
+import type {PatientSummary} from '@/types'
 
 const items = ref<PatientSummary[]>([])
 const total = ref(0)

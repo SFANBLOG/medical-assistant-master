@@ -65,7 +65,7 @@
 import {reactive, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
-import {useAuth} from '../stores/auth'
+import {useAuth} from '@/stores/auth'
 
 const auth = useAuth()
 const router = useRouter()

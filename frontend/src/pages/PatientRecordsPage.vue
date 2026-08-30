@@ -70,9 +70,9 @@
 <script setup lang="ts">
 import {onMounted, ref} from 'vue'
 import {ElMessage} from 'element-plus'
-import {patientApi} from '../api/endpoints'
-import type {Appointment, Bill, Hospitalization} from '../types'
-import {APPOINTMENT_STATUS_LABELS} from '../types'
+import {patientApi} from '@/api/endpoints'
+import type {Appointment, Bill, Hospitalization} from '@/types'
+import {APPOINTMENT_STATUS_LABELS} from '@/types'
 
 const APPT_STATUS_LABELS = APPOINTMENT_STATUS_LABELS
 

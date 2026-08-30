@@ -43,9 +43,9 @@ import {reactive, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import type {FormInstance, FormRules} from 'element-plus'
 import {ElMessage} from 'element-plus'
-import {useAuth} from '../stores/auth'
-import type {Role} from '../types'
-import {ROLE_LABELS} from '../types'
+import {useAuth} from '@/stores/auth'
+import type {Role} from '@/types'
+import {ROLE_LABELS} from '@/types'
 
 const auth = useAuth()
 const router = useRouter()

@@ -69,9 +69,9 @@
 import {onMounted, reactive, ref} from 'vue'
 import {ElMessage} from 'element-plus'
 import dayjs from 'dayjs'
-import {patientApi} from '../api/endpoints'
-import type {Appointment} from '../types'
-import {APPOINTMENT_STATUS_LABELS} from '../types'
+import {patientApi} from '@/api/endpoints'
+import type {Appointment} from '@/types'
+import {APPOINTMENT_STATUS_LABELS} from '@/types'
 
 const APPT_STATUS_LABELS = APPOINTMENT_STATUS_LABELS
 

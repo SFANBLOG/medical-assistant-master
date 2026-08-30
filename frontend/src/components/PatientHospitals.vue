@@ -18,8 +18,8 @@
 <script setup lang="ts">
 import {onMounted, ref} from 'vue'
 import {ElMessage} from 'element-plus'
-import {doctorApi} from '../api/endpoints'
-import type {Hospitalization} from '../types'
+import {doctorApi} from '@/api/endpoints'
+import type {Hospitalization} from '@/types'
 
 const props = defineProps<{ patientId: number }>()
 

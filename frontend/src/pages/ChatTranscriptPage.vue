@@ -20,9 +20,9 @@
 import {onMounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
-import ChatMessage from '../components/ChatMessage.vue'
-import {chatApi} from '../api/endpoints'
-import type {Message} from '../types'
+import ChatMessage from '@/components/ChatMessage.vue'
+import {chatApi} from '@/api/endpoints'
+import type {Message} from '@/types'
 
 const route = useRoute()
 const router = useRouter()

@@ -114,9 +114,9 @@
 <script setup lang="ts">
 import {computed, onMounted, reactive, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {kbApi} from '../api/endpoints'
-import {useAuth} from '../stores/auth'
-import type {DocumentItem, KnowledgeBase, Visibility} from '../types'
+import {kbApi} from '@/api/endpoints'
+import {useAuth} from '@/stores/auth'
+import type {DocumentItem, KnowledgeBase, Visibility} from '@/types'
 
 const auth = useAuth()
 const userRole = computed(() => auth.user?.role)

@@ -17,7 +17,7 @@ import type {
     SearchHit,
     User,
     Visibility,
-} from '../types'
+} from '@/types'
 
 export const authApi = {
   login: (username: string, password: string) =>
