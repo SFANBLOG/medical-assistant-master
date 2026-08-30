@@ -1,5 +1,22 @@
-# 医智助手 · Docker Compose 部署
-# 前端 Nginx(3000) + 后端 gunicorn(8010) + MySQL8 + Milvus v2.5.6 + Attu WebUI
+# 医智助手 · Docker Compose 部署（已按代码实测校准，2026-08-30）
+#
+# 架构：前端 Nginx(3000) + 后端 gunicorn(8010) + MySQL 8.0 + Milvus v2.5.6 + Attu + etcd + MinIO
+#
+# 重要说明（以本文件为准，勿照搬《部署说明.md》）：
+# 1. 组件版本：MySQL 8.0 / etcd v3.5.12 / Milvus v2.5.6 / Attu v2.5.12。
+#    《部署说明.md》里出现的 Redis、etcd v3.5.18、Milvus v2.5.4、MySQL 8.0.40 均与实际不符。
+# 2. 本编排【不包含 Redis】：backend/services/cache.py 为死代码（无任何模块 import，且在架构 A 下首行
+#    `from config import Config` 必然 ImportError），项目运行不依赖 Redis，相关配置可忽略。
+# 3. 环境变量可通过项目根目录 .env 覆盖（Docker Compose 自动读取），未设置时取下方默认值。
+#    所有变量名均对照 backend/config.py 实测，不存在失效变量（如 DATABASE_PATH / JWT_EXPIRES_HOURS /
+#    QUERY_PREFIX / MILVUS_DB 等均未被读取，已排除）。
+# 4. 演示账号见 README：patientdemo / doctordemo / nursedemo / publicdemo / admindemo，密码统一 demo123。
+#
+# 启动：   docker compose up -d --build
+# 日志：   docker compose logs -f backend
+# 停止：   docker compose down
+# 清数据： docker compose down -v   （会删除 mysql/etcd/minio/milvus/uploads 卷）
+
 services:
   mysql:
     image: mysql:8.0
@@ -36,7 +53,8 @@ services:
     restart: unless-stopped
 
   minio:
-    # 修正：全部使用英文短横杠
+    # MinIO 作为 Milvus 的对象存储。未显式设置凭据时默认 minioadmin/minioadmin，
+    # 与 Milvus 默认配置一致；Milvus 首次启动会自动建桶。
     image: minio/minio:latest
     container_name: medical-minio
     environment:
@@ -65,6 +83,7 @@ services:
     restart: unless-stopped
 
   attu:
+    # Milvus 可视化管理界面（需与 Milvus 大版本一致：v2.5.x）
     image: zilliz/attu:v2.5.12
     container_name: medical-attu
     ports:
@@ -90,6 +109,8 @@ services:
       MILVUS_ENABLE: "1"
       MILVUS_HOST: milvus
       MILVUS_PORT: 19530
+      # Milvus 未就绪时快速失败并降级为本地 NumpyStore，避免阻塞启动（单位：秒）
+      MILVUS_CONNECT_TIMEOUT: "3"
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-xxx}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-deepseek-chat}
@@ -97,9 +118,9 @@ services:
       EMBED_DIM: ${EMBED_DIM:-768}
       CHUNK_SIZE: ${CHUNK_SIZE:-500}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-80}
-      # 是否把章节路径（如「第3章 糖尿病 > 3.1 分型」）拼到 chunk 文本前
+      # 是否把「章节路径」拼到 chunk 文本前（如「第3章 糖尿病 > 3.1 分型」）
       CHUNK_HEADING_PREFIX: ${CHUNK_HEADING_PREFIX:-1}
-      # PDF：清洗跨页重复的页眉/页脚/页码；提取字符数低于该值视为扫描件
+      # PDF：清洗跨页重复的页眉/页脚/页码；整篇提取字符数低于该值视为扫描件
       PDF_STRIP_HEADER_FOOTER: ${PDF_STRIP_HEADER_FOOTER:-1}
       PDF_MIN_TEXT_CHARS: ${PDF_MIN_TEXT_CHARS:-50}
       TOP_K: ${TOP_K:-5}
@@ -115,6 +136,14 @@ services:
         condition: service_healthy
       milvus:
         condition: service_started
+    # 首次启动会建库建表 + 播种约 241 篇演示文档（含本地 BGE 模型加载），耗时较长；
+    # start_period 给足宽限，避免被误判为不健康。
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/api/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     restart: unless-stopped
 
   frontend:
@@ -125,7 +154,9 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      # 等后端真正就绪（健康检查通过）后再起前端，避免首屏 502
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
