@@ -68,8 +68,9 @@ def _clean_answer_text(text: str) -> str:
     s = _RE_EM.sub(r"\1", s)
     # 整行标题去掉井号
     s = _RE_HEADING.sub("", s)
-    # 行内残留的 ## 团（chunk 边界断裂导致）统一移除
-    s = _RE_HEADING_ANYWHERE.sub("", s)
+    # 行内残留的 ## 团（chunk 边界断裂导致）替换为换行，
+    # 保留文档原有的章节分隔，避免标题与正文粘连成“脂肪肝概述脂肪肝是…”
+    s = _RE_HEADING_ANYWHERE.sub("\n", s)
     # 列表项目符号归一到中文顿号分隔：把 "- " 替换成 "·" 形式（保留可读性）
     s = _RE_LIST_DASH_STAR.sub("", s)
     # 数字列表去掉 "1. " 等

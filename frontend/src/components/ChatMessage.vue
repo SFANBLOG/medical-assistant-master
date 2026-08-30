@@ -176,6 +176,17 @@ function formatSimilarity(v: number | undefined): string {
   margin: 4px 0;
   line-height: 1.7;
 }
+/* 中文序号项：标题 + 正文两段式层级 */
+.rich-list li .li-title {
+  font-weight: 600;
+  color: #303133;
+}
+.rich-list li .li-body {
+  margin-top: 2px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
 
 .err-tip {
   margin-top: 6px;
