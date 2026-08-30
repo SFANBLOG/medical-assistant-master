@@ -6,6 +6,14 @@
     </div>
 
     <div class="bubble-wrap">
+      <!-- Agent 角色标识：回答由哪个智能体产出，一目了然 -->
+      <div
+        v-if="message.role === 'assistant' && agentRoleLabel"
+        class="agent-role-badge"
+      >
+        <el-icon><Cpu /></el-icon>
+        <span>{{ agentRoleLabel }}</span>
+      </div>
       <div class="bubble" :class="message.role">
         <!-- 打字中 -->
         <div v-if="message.streaming && !message.content" class="typing">
@@ -123,6 +131,14 @@ const props = defineProps<{ message: Message }>()
 const citeVisible = ref(true)
 const stepsVisible = ref(false)
 
+// 从 Agent 轨迹的 meta 事件中提取「本次回答由哪个智能体产出」
+const agentRoleLabel = computed(() => {
+  const steps = props.message.agentSteps
+  if (!steps || steps.length === 0) return ''
+  const meta = steps.find((s) => s.type === 'meta')
+  return meta?.role_label || ''
+})
+
 // 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
 const renderedHtml = computed(() =>
   props.message.streaming ? '' : renderRichText(props.message.content),
@@ -172,6 +188,22 @@ function formatSimilarity(v: number | undefined): string {
   max-width: 78%;
   display: flex;
   flex-direction: column;
+}
+
+/* Agent 角色标识 */
+.agent-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-size: 12px;
+  color: #e67e22;
+  background: #fdf1e7;
+  border: 1px solid #f6d9bf;
+  border-radius: 10px;
+  padding: 1px 9px;
+  margin-bottom: 5px;
+  user-select: none;
 }
 
 .msg-row.user .bubble-wrap {

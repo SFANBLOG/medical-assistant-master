@@ -90,10 +90,13 @@ export interface Message {
 
 /** Agent 推理步骤（与后端 orchestrator 事件对应） */
 export interface AgentStep {
-  type: 'thought' | 'tool_call' | 'observation' | 'message' | 'done' | 'error'
+  type: 'thought' | 'tool_call' | 'observation' | 'message' | 'done' | 'error' | 'meta'
   content?: string
   name?: string
   args?: Record<string, unknown>
+  // meta 事件：标识本次回答由哪个智能体（角色）产出
+  role?: string
+  role_label?: string
 }
 
 /** 住院记录 */

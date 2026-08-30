@@ -4,7 +4,7 @@ import json
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 
 from backend.utils.jwt_utils import login_required, current_user
-from backend.utils.db import fetchone
+from backend.utils.db import fetchone, fetchall
 from backend.agent import service as agent_service
 from backend.agent import tools as toolmod
 
@@ -64,3 +64,39 @@ def agent_stream(conv_id):
             "Connection": "keep-alive",
         }
     )
+
+
+@agent_bp.route("/trace/<int:message_id>", methods=["GET"])
+@login_required
+def get_trace(message_id):
+    """查询某条 AI 消息的 Agent 推理轨迹与引用来源（可观测 / 审计 / 评测）。"""
+    user = current_user()
+    row = fetchone(
+        "SELECT m.id, m.conversation_id, m.content, m.agent_steps, m.review_status "
+        "FROM messages m JOIN conversations c ON m.conversation_id = c.id "
+        "WHERE m.id = %s AND c.user_id = %s AND m.role = 'assistant'",
+        (message_id, user["user_id"]),
+    )
+    if not row:
+        return jsonify({"error": "消息不存在或无权限"}), 404
+
+    raw = row.get("agent_steps") or "[]"
+    try:
+        steps = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError):
+        steps = []
+
+    cites = fetchall(
+        "SELECT document_id, chunk_index, source_text, title, similarity "
+        "FROM citations WHERE message_id = %s",
+        (message_id,),
+    )
+
+    return jsonify({
+        "message_id": message_id,
+        "conversation_id": row.get("conversation_id"),
+        "review_status": row.get("review_status"),
+        "answer": row.get("content"),
+        "agent_steps": steps,
+        "citations": cites,
+    })
