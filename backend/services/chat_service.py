@@ -8,6 +8,7 @@ from backend.utils.db import fetchone, fetchall, execute
 from backend.rag.retriever import retrieve, build_context
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend import config
+
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
     """创建新会话。"""
     conv_id = uuid.uuid4().hex
@@ -113,7 +114,7 @@ def chat_stream_sse(
         citations.append({
             "doc_id": h["doc_id"],
             "chunk_index": h["chunk_index"],
-            "source_text": h["text"][:200],
+            "source_text": _clean_answer_text(h["text"])[:200],
             "title": h.get("filename", ""),
             "similarity": h["similarity"],
         })

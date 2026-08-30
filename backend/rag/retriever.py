@@ -22,6 +22,7 @@ from backend.rag.embedder import get_embedder
 from backend.rag.vectorstore import get_vectorstore
 from backend.rag.bm25 import BM25Index
 from backend.rag.reranker import get_reranker
+from backend.rag.llm import _clean_answer_text
 from backend.utils.db import fetchall
 
 
@@ -263,7 +264,7 @@ def build_context(hits: list[dict], max_chars: int = 4000) -> str:
     parts = []
     total = 0
     for i, h in enumerate(hits, 1):
-        text = h["text"].strip()
+        text = _clean_answer_text(h["text"]).strip()
         source = h.get("filename", f"文档{h['doc_id']}")
         chunk = f"[{i}] 来源：{source}\n{text}\n"
         if total + len(chunk) > max_chars:

@@ -47,6 +47,7 @@ _RE_UNDERSCORE_BOLD = re.compile(r"__(.+?)__", re.DOTALL)
 _RE_TRIPLE_FENCE = re.compile(r"```.*?```", re.DOTALL)
 _RE_INLINE_CODE = re.compile(r"`([^`]+)`")
 _RE_HEADING = re.compile(r"(?m)^\s{0,3}#{1,6}\s*")
+_RE_HEADING_ANYWHERE = re.compile(r"(?:#{1,6}\s*)+")  # chunk 断裂产生的行内 ## 团
 _RE_LIST_DASH_STAR = re.compile(r"(?m)^\s*[-*•]\s+")
 _RE_LIST_NUMBER = re.compile(r"(?m)^\s*\d{1,3}\.\s+")
 _RE_BRACKET_CITE = re.compile(r"\[(\d{1,3})\]")  # LLM 偶发的 [1] [2] 引用标记
@@ -67,6 +68,8 @@ def _clean_answer_text(text: str) -> str:
     s = _RE_EM.sub(r"\1", s)
     # 整行标题去掉井号
     s = _RE_HEADING.sub("", s)
+    # 行内残留的 ## 团（chunk 边界断裂导致）统一移除
+    s = _RE_HEADING_ANYWHERE.sub("", s)
     # 列表项目符号归一到中文顿号分隔：把 "- " 替换成 "·" 形式（保留可读性）
     s = _RE_LIST_DASH_STAR.sub("", s)
     # 数字列表去掉 "1. " 等
