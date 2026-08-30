@@ -16,6 +16,8 @@ from backend.routes.chat_bp import chat_bp
 from backend.routes.kb_bp import kb_bp
 from backend.routes.medical_bp import medical_bp
 from backend.routes.dashboard_bp import dashboard_bp
+from backend.routes.agent_bp import agent_bp
+from backend.routes.review_bp import review_bp
 
 
 def create_app() -> Flask:
@@ -32,6 +34,8 @@ def create_app() -> Flask:
     app.register_blueprint(kb_bp, url_prefix="/api/kb")
     app.register_blueprint(medical_bp, url_prefix="/api/medical")
     app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
+    app.register_blueprint(agent_bp, url_prefix="/api/agent")
+    app.register_blueprint(review_bp, url_prefix="/api/review")
 
     # 健康检查
     @app.route("/api/health")

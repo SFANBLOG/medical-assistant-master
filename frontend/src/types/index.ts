@@ -83,6 +83,17 @@ export interface Message {
   citations?: Citation[]
   streaming?: boolean
   error?: boolean
+  // Agent 模式：ReAct 推理轨迹（思考 / 工具调用 / 观察）
+  agentSteps?: AgentStep[]
+  agentMode?: boolean
+}
+
+/** Agent 推理步骤（与后端 orchestrator 事件对应） */
+export interface AgentStep {
+  type: 'thought' | 'tool_call' | 'observation' | 'message' | 'done' | 'error'
+  content?: string
+  name?: string
+  args?: Record<string, unknown>
 }
 
 /** 住院记录 */

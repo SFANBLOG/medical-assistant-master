@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS `messages`
     `reviewer_id`     INT UNSIGNED NULL,
     `reviewed_at`     DATETIME     NULL,
     `review_note`     VARCHAR(512) NULL,
+    `agent_steps`     TEXT         NULL COMMENT 'Agent ReAct 轨迹(JSON)',
     `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_messages_conv` (`conversation_id`)
@@ -276,3 +277,22 @@ CREATE TABLE IF NOT EXISTS `schedules`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='医护排班表';
+-- 审计日志表（人工复核 HITL 留痕 + 关键操作追溯）
+CREATE TABLE IF NOT EXISTS `audit_logs`
+(
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `actor_id`    INT UNSIGNED NULL COMMENT '操作人 user_id',
+    `actor_role`  VARCHAR(32)  NULL COMMENT '操作人角色快照',
+    `action`      VARCHAR(64)  NOT NULL COMMENT '动作标识：ai_answer_approved / doc_rejected / ...',
+    `target_type` VARCHAR(32)  NULL COMMENT '对象类型：message / document / user ...',
+    `target_id`   VARCHAR(64)  NULL COMMENT '对象 ID',
+    `detail`      VARCHAR(1000) NULL COMMENT '摘要或复核意见',
+    `ip`          VARCHAR(64)  NULL COMMENT '来源 IP',
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_audit_action` (`action`),
+    KEY `idx_audit_target` (`target_type`, `target_id`),
+    KEY `idx_audit_created` (`created_at`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='审计日志表';

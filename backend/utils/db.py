@@ -247,3 +247,10 @@ def _run_hitl_migrations():
     ]:
         if not _column_exists("messages", col):
             execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")
+
+    # ---- messages 表：Agent ReAct 轨迹（可观测性）----
+    if not _column_exists("messages", "agent_steps"):
+        # MySQL 用 TEXT（上限 64KB，单条回答的轨迹足够）；SQLite 的 TEXT 亦满足。
+        _col_type = "TEXT NULL" if DB_TYPE == "sqlite" else "TEXT NULL COMMENT 'Agent ReAct 轨迹(JSON)'"
+        execute(f"ALTER TABLE messages ADD COLUMN agent_steps {_col_type}")
+        print("[DB] messages.agent_steps 迁移完成")

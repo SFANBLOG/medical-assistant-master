@@ -171,6 +171,10 @@
             @keydown="handleKeydown"
           />
           <div class="input-footer">
+            <label class="agent-mode" title="开启后由后端 Agent 编排器决策工具调用与回答">
+              <el-switch v-model="agentMode" size="small" />
+              <span class="mode-label">智能体</span>
+            </label>
             <span class="input-tip">
               <template v-if="weather.loading">正在获取天气…</template>
               <template v-else-if="weather.error">{{ weather.error }}</template>
@@ -203,7 +207,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { chatApi, kbApi, chatStreamUrl, authHeaders } from '@/api'
+import { chatApi, kbApi, chatStreamUrl, agentStreamUrl, authHeaders } from '@/api'
 import type { Conversation, Message, KnowledgeBase } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/ChatMessage.vue'
@@ -247,6 +251,8 @@ const kbs = ref<KnowledgeBase[]>([])
 const selectedKbId = ref<number | undefined | null>(GENERAL_KB_ID)
 const inputText = ref('')
 const sending = ref(false)
+// 智能体模式：开启后走 /api/agent/stream，由后端 Agent 编排器决定工具调用与回答
+const agentMode = ref(false)
 const chatBodyRef = ref<HTMLElement>()
 
 // 推荐问题池：每次进入页面从中随机抽取 6 个，且与上次不重复。
@@ -420,6 +426,8 @@ async function sendMessage() {
     content: '',
     streaming: true,
     citations: [],
+    agentMode: agentMode.value,
+    agentSteps: agentMode.value ? [] : undefined,
   })
   messages.value.push(userMsg, aiMsg)
   scrollToBottom()
@@ -439,7 +447,9 @@ async function sendMessage() {
 }
 
 async function streamChat(convId: string, question: string, aiMsg: Message) {
-  const resp = await fetch(chatStreamUrl(convId), {
+  // 智能体模式走 Agent 端点；其余走原聊天端点
+  const url = aiMsg.agentMode ? agentStreamUrl(convId) : chatStreamUrl(convId)
+  const resp = await fetch(url, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({
@@ -474,18 +484,36 @@ async function streamChat(convId: string, question: string, aiMsg: Message) {
         continue
       }
 
+      // 兼容两种事件格式：Agent 的 {type:...} 与原聊天的扁平字段
+      const evtType = typeof data.type === 'string' ? data.type : undefined
+
       if (Array.isArray(data.citations)) {
         aiMsg.citations = data.citations as Message['citations']
       }
-      if (typeof data.content === 'string' && data.content) {
-        aiMsg.content += data.content
+
+      if (evtType === 'thought' || evtType === 'tool_call' || evtType === 'observation') {
+        if (!aiMsg.agentSteps) aiMsg.agentSteps = []
+        aiMsg.agentSteps.push({
+          type: evtType,
+          content: typeof data.content === 'string' ? data.content : undefined,
+          name: typeof data.name === 'string' ? data.name : undefined,
+          args: (data.args as Record<string, unknown>) || undefined,
+        })
+      } else if (evtType === 'message' || (!evtType && typeof data.content === 'string' && data.content)) {
+        // 最终回答增量（智能体 message 事件 / 普通聊天 content 字段）
+        aiMsg.content += (data.content as string) || ''
         scrollToBottom()
       }
+
       if (typeof data.error === 'string') {
         aiMsg.error = true
         if (!aiMsg.content) aiMsg.content = data.error
+        if (evtType) {
+          if (!aiMsg.agentSteps) aiMsg.agentSteps = []
+          aiMsg.agentSteps.push({ type: 'error', content: data.error })
+        }
       }
-      if (data.done === true) {
+      if (data.done === true || evtType === 'done') {
         aiMsg.streaming = false
       }
     }
@@ -924,6 +952,30 @@ async function loadWeather() {
   line-height: 1.5;
   flex: 1;
   min-width: 220px;
+}
+
+/* 智能体模式开关 */
+.agent-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #606266;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #f4f4f5;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.agent-mode:hover {
+  border-color: #409eff;
+}
+
+.mode-label {
+  font-weight: 500;
 }
 
 .input-tip-divider {

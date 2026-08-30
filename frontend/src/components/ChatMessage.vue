@@ -19,6 +19,59 @@
         <div v-if="message.error" class="err-tip">（本次回答可能不完整）</div>
       </div>
 
+      <!-- Agent 推理轨迹：思考 / 工具调用 / 观察 -->
+      <div
+        v-if="
+          message.role === 'assistant' &&
+          message.agentSteps &&
+          message.agentSteps.length > 0
+        "
+        class="agent-steps"
+      >
+        <div class="step-toggle" @click="stepsVisible = !stepsVisible">
+          <el-icon><Cpu /></el-icon>
+          <span>思考过程（Agent · {{ message.agentSteps.length }} 步）</span>
+          <el-icon class="step-arrow">
+            <ArrowUp v-if="stepsVisible" />
+            <ArrowDown v-else />
+          </el-icon>
+        </div>
+        <el-collapse-transition>
+          <div v-show="stepsVisible" class="step-list">
+            <div
+              v-for="(s, i) in message.agentSteps"
+              :key="i"
+              class="step-item"
+              :class="s.type"
+            >
+              <template v-if="s.type === 'thought'">
+                <span class="step-tag think">思考</span>
+                <span class="step-body">{{ s.content }}</span>
+              </template>
+              <template v-else-if="s.type === 'tool_call'">
+                <span class="step-tag tool">工具</span>
+                <span class="step-body">
+                  <b>{{ s.name }}</b>
+                  <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
+                </span>
+              </template>
+              <template v-else-if="s.type === 'observation'">
+                <span class="step-tag obs">观察</span>
+                <span class="step-body">{{ s.content }}</span>
+              </template>
+              <template v-else-if="s.type === 'error'">
+                <span class="step-tag err">错误</span>
+                <span class="step-body">{{ s.content }}</span>
+              </template>
+              <template v-else-if="s.type === 'meta'">
+                <span class="step-tag meta">智能体</span>
+                <span class="step-body">{{ s.role_label }}</span>
+              </template>
+            </div>
+          </div>
+        </el-collapse-transition>
+      </div>
+
       <!-- 相关文档：回答生成后，列出与用户问题最相关的检索来源 -->
       <div
         v-if="
@@ -61,12 +114,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Cpu, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import type { Message } from '@/types'
 import { renderRichText } from '@/utils/richtext'
 
 const props = defineProps<{ message: Message }>()
 
 const citeVisible = ref(true)
+const stepsVisible = ref(false)
 
 // 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
 const renderedHtml = computed(() =>
@@ -234,6 +289,98 @@ function formatSimilarity(v: number | undefined): string {
 .citations {
   margin-top: 8px;
   width: 100%;
+}
+
+/* Agent 推理轨迹 */
+.agent-steps {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.step-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #8e44ad;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f5eefa;
+}
+
+.step-toggle:hover {
+  background: #efe0f7;
+}
+
+.step-arrow {
+  transition: transform 0.2s;
+}
+
+.step-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #faf7fc;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.step-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  color: #fff;
+}
+
+.step-tag.think {
+  background: #8e44ad;
+}
+
+.step-tag.tool {
+  background: #409eff;
+}
+
+.step-tag.obs {
+  background: #67c23a;
+}
+
+.step-tag.err {
+  background: #f56c6c;
+}
+
+.step-tag.meta {
+  background: #e67e22;
+}
+
+.step-body {
+  color: #606266;
+  word-break: break-word;
+  flex: 1;
+}
+
+.step-body code {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  background: #eef0f3;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #555;
+  word-break: break-all;
 }
 
 .cite-toggle {
