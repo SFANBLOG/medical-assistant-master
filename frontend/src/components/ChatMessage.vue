@@ -24,7 +24,7 @@
         </div>
         <!-- 内容：流式输出阶段按纯文本展示，避免半截标签；结束后渲染为结构化富文本 -->
         <div v-else-if="message.streaming" class="content">{{ message.content }}</div>
-        <div v-else class="content rich" v-html="renderedHtml"></div>
+        <div v-else class="content rich" v-html="renderedHtml" @click="onContentClick"></div>
         <div v-if="message.error" class="err-tip">（本次回答可能不完整）</div>
       </div>
 
@@ -77,6 +77,17 @@
                       effect="plain"
                       class="tool-retrieve"
                     >检索</el-tag>
+                    <el-button
+                      v-if="s.name === 'search_knowledge' && hasCitations"
+                      size="small"
+                      type="primary"
+                      link
+                      class="tool-cite-btn"
+                      @click="openCitations"
+                    >
+                      <el-icon><Document /></el-icon>
+                      <span>引用 {{ message.citations.length }}</span>
+                    </el-button>
                     <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
                   </template>
                   <template v-else>{{ s.content }}</template>
@@ -95,6 +106,7 @@
           message.citations.length > 0
         "
         class="citations"
+        :id="'cites-' + msgKey"
       >
         <div class="cite-toggle" @click="citeVisible = !citeVisible">
           <el-icon><Document /></el-icon>
@@ -110,6 +122,7 @@
               v-for="(c, i) in message.citations"
               :key="i"
               class="cite-item"
+              :id="'cite-' + msgKey + '-' + i"
             >
               <div class="cite-head">
                 <span class="cite-idx">[{{ i + 1 }}]</span>
@@ -128,8 +141,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Cpu, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { ref, computed, nextTick } from 'vue'
+import { Cpu, ArrowUp, ArrowDown, Document } from '@element-plus/icons-vue'
 import type { Message, AgentStep } from '@/types'
 import { renderRichText } from '@/utils/richtext'
 
@@ -137,6 +150,14 @@ const props = defineProps<{ message: Message }>()
 
 const citeVisible = ref(true)
 const stepsVisible = ref(false)
+
+// 同一会话内多条消息可能无 id，用稳定 key 给引用锚点命名，避免冲突
+const msgKey = computed(() => props.message.id ?? 'm')
+
+// 是否有可高亮/跳转的引用
+const hasCitations = computed(
+  () => !!(props.message.citations && props.message.citations.length),
+)
 
 // 从 Agent 轨迹的 meta 事件中提取「本次回答由哪个智能体产出」
 const agentRoleLabel = computed(() => {
@@ -220,9 +241,22 @@ function stepElapsed(s: AgentStep): string {
 }
 
 // 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
-const renderedHtml = computed(() =>
-  props.message.streaming ? '' : renderRichText(props.message.content),
-)
+const renderedHtml = computed(() => {
+  if (props.message.streaming) return ''
+  // 把正文中的 [1] [2] 等脚注标记高亮为可点击引用
+  return highlightCitationMarkers(renderRichText(props.message.content))
+})
+
+/**
+ * 将正文里的 [n]（n=1..99）数字脚注包裹为可点击的高亮脚注。
+ * 输入为已 HTML 转义的安全文本，仅做最轻量的正则包裹，不引入任意标签。
+ */
+function highlightCitationMarkers(html: string): string {
+  if (!hasCitations.value) return html
+  return html.replace(/\[(\d{1,2})\]/g, (_m, n: string) => {
+    return `<sup class="cite-ref" data-idx="${n}">[${n}]</sup>`
+  })
+}
 
 function formatSimilarity(v: number | undefined): string {
   if (v === undefined || v === null) return '-'
@@ -230,6 +264,35 @@ function formatSimilarity(v: number | undefined): string {
   // 兼容 0-1 与 0-100 两种量纲
   const pct = num > 1 ? num : num * 100
   return `${pct.toFixed(1)}%`
+}
+
+// 点击事件委托：点击正文中的 [n] 脚注 → 展开引用区并滚动/闪烁到对应卡片
+function onContentClick(e: MouseEvent) {
+  const el = (e.target as HTMLElement).closest('.cite-ref') as HTMLElement | null
+  if (!el) return
+  const idx = Number(el.getAttribute('data-idx'))
+  if (idx) highlightCite(idx)
+}
+
+// 滚动到指定引用卡片并短暂高亮
+function highlightCite(idx: number) {
+  citeVisible.value = true
+  nextTick(() => {
+    const target = document.getElementById(`cite-${msgKey.value}-${idx - 1}`)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    target.classList.add('cite-flash')
+    window.setTimeout(() => target.classList.remove('cite-flash'), 1300)
+  })
+}
+
+// 时间线内「引用 N」按钮：展开引用区并滚动定位
+function openCitations() {
+  citeVisible.value = true
+  nextTick(() => {
+    const block = document.getElementById(`cites-${msgKey.value}`)
+    if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
 }
 </script>
 
@@ -521,6 +584,51 @@ function formatSimilarity(v: number | undefined): string {
 
 .tool-retrieve {
   margin-left: 6px;
+}
+
+/* 时间线内「引用 N」按钮 */
+.tool-cite-btn {
+  margin-left: 6px;
+  vertical-align: middle;
+  font-size: 11px;
+}
+
+/* 正文中 [n] 脚注高亮 */
+.cite-ref {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  color: #fff;
+  background: #409eff;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin: 0 1px;
+  cursor: pointer;
+  vertical-align: super;
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+
+.cite-ref:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.5);
+}
+
+/* 被定位引用时的闪烁高亮 */
+.cite-flash {
+  animation: cite-flash 1.3s ease-out;
+}
+
+@keyframes cite-flash {
+  0% {
+    box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.55);
+    background: #eaf3ff;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
+    background: #f7f9fc;
+  }
 }
 
 .cite-toggle {
