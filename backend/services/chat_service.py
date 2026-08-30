@@ -6,7 +6,7 @@ from typing import Generator
 
 from backend.utils.db import fetchone, fetchall, execute
 from backend.rag.retriever import retrieve, build_context
-from backend.rag.llm import chat_stream
+from backend.rag.llm import chat_stream, _clean_answer_text
 from backend import config
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
     """创建新会话。"""
@@ -30,7 +30,7 @@ def list_conversations(user_id: int) -> list[dict]:
 
 
 def get_conversation(conv_id: str, user_id: int) -> dict | None:
-    """获取会话详情（含消息）。"""
+    """获取会话详情（含消息及每条 AI 回答的引用来源）。"""
     conv = fetchone("SELECT * FROM conversations WHERE id = %s AND user_id = %s", (conv_id, user_id))
     if not conv:
         return None
@@ -38,6 +38,17 @@ def get_conversation(conv_id: str, user_id: int) -> dict | None:
         "SELECT * FROM messages WHERE conversation_id = %s ORDER BY id ASC",
         (conv_id,)
     )
+    # 为 AI 回答补齐引用来源（citations），让历史会话也能展示「相关文档」
+    for m in messages:
+        if m.get("role") == "assistant":
+            cites = fetchall(
+                "SELECT document_id AS doc_id, chunk_index, source_text, title, similarity "
+                "FROM citations WHERE message_id = %s ORDER BY id ASC",
+                (m["id"],),
+            )
+            m["citations"] = cites
+        else:
+            m["citations"] = []
     conv["messages"] = messages
     return conv
 
@@ -120,7 +131,7 @@ def chat_stream_sse(
         except Exception:
             pass
 
-    answer_text = "".join(full_answer)
+    answer_text = _clean_answer_text("".join(full_answer))
 
     # 6. 保存 AI 回答
     execute(

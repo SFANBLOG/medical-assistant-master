@@ -122,6 +122,10 @@ def _chat_stream_api(
             yield from _chat_offline(question, context, history)
             return
 
+        # 累积原始 content，在完整文本边界做清洗，再输出「新增」的干净文本。
+        # 避免 Markdown 符号（如 ##、**）被 chunk 边界切断，导致逐 chunk 清洗失效。
+        raw_buffer = ""
+        clean_buffer = ""
         for line in resp.iter_lines():
             if not line:
                 continue
@@ -135,10 +139,22 @@ def _chat_stream_api(
                 chunk = json.loads(data)
                 delta = chunk.get("choices", [{}])[0].get("delta", {})
                 content = delta.get("content", "")
-                if content:
-                    yield _sse({"content": _clean_answer_text(content)})
+                if not content:
+                    continue
+                raw_buffer += content
+                new_clean = _clean_answer_text(raw_buffer)
+                if len(new_clean) > len(clean_buffer):
+                    delta_clean = new_clean[len(clean_buffer):]
+                    clean_buffer = new_clean
+                    if delta_clean:
+                        yield _sse({"content": delta_clean})
             except json.JSONDecodeError:
                 continue
+
+        # 流结束后再整体清洗一次，确保无残留
+        final_clean = _clean_answer_text(raw_buffer)
+        if len(final_clean) > len(clean_buffer):
+            yield _sse({"content": final_clean[len(clean_buffer):]})
 
         yield _sse({"done": True})
 

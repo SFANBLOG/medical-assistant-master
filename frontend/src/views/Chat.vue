@@ -349,6 +349,7 @@ async function selectConversation(conv: Conversation) {
       id: m.id,
       role: m.role,
       content: m.content || '',
+      citations: m.citations || [],
     }))
   } catch (e: unknown) {
     ElMessage.error((e as Error).message || '加载会话失败')
@@ -490,9 +491,7 @@ async function streamChat(convId: string, question: string, aiMsg: Message) {
     }
   }
 
-  // 流结束兜底：做一次展示层净化，剥离可能残留的 markdown/列表符号
-  aiMsg.content = cleanDisplayedAnswer(aiMsg.content)
-  aiMsg.streaming = false
+  // 流结束：富文本结构化由 ChatMessage 内部 renderRichText 处理，这里无需再剥符号
 
   // 刷新会话标题与列表排序
   await loadConversations()
@@ -500,22 +499,6 @@ async function streamChat(convId: string, question: string, aiMsg: Message) {
   if (updated && currentConv.value) {
     currentConv.value = updated
   }
-}
-
-/**
- * 展示层兜底清洗：剥除遗留的 ** # ` 等 markdown 与列表符号。
- * 后端已经做过一轮清洗；这里是防御性的二次处理（应对历史消息）。
- */
-function cleanDisplayedAnswer(text: string): string {
-  if (!text) return text
-  let s = text
-  s = s.replace(/\*\*(.+?)\*\*/g, '$1')
-  s = s.replace(/__(.+?)__/g, '$1')
-  s = s.replace(/`([^`]+)`/g, '$1')
-  s = s.replace(/^\s{0,3}#{1,6}\s*/gm, '')
-  s = s.replace(/^\s*(?:[-*•]|\d{1,3}\.)\s+/gm, '')
-  s = s.replace(/\n{3,}/g, '\n\n')
-  return s.trim()
 }
 
 /* ---------- 其他 ---------- */
@@ -599,16 +582,35 @@ function wmoToChinese(code: number): string {
   return map[code] ?? '未知'
 }
 
-/** 获取当前位置天气：优先浏览器定位，失败回退到 IP 定位，再用 Open-Meteo 免费接口查天气。 */
+/**
+ * 反向地理编码：经纬度 → 真实城市名。
+ * 使用 BigDataCloud 免费客户端接口（无需 API Key，支持浏览器 CORS）。
+ * 这是修复「南京显示成上海」的关键：浏览器定位只给经纬度，必须反查城市，
+ * 不能把 Open-Meteo 返回的时区（如 Asia/Shanghai）当城市名。
+ */
+async function reverseGeocode(lat: number, lon: number): Promise<string> {
+  try {
+    const r = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`,
+    )
+    if (!r.ok) return ''
+    const d = await r.json()
+    // 优先市级，回退到区/县级，再回退到省级
+    return d.city || d.locality || d.principalSubdivision || ''
+  } catch {
+    return ''
+  }
+}
+
+/** 获取当前位置天气：浏览器定位 → 反查城市名 → Open-Meteo 免费接口查天气。 */
 async function loadWeather() {
   weather.loading = true
   weather.error = undefined
   try {
     let lat: number | undefined
     let lon: number | undefined
-    let city = ''
 
-    // 1) 优先使用浏览器 Geolocation API（localhost/https 下可用）
+    // 1) 优先使用浏览器 Geolocation API（GPS/WiFi，最准确，能拿到真实所在城市）
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -620,20 +622,25 @@ async function loadWeather() {
       lat = pos.coords.latitude
       lon = pos.coords.longitude
     } catch {
-      // 2) 浏览器定位失败/被拒时，使用 geojs 免费 IP 定位获取经纬度
-      const ipRes = await fetch('https://get.geojs.io/v1/ip/geo.json')
-      const ipData = await ipRes.json()
-      lat = parseFloat(ipData.latitude)
-      lon = parseFloat(ipData.longitude)
-      // geojs 不返回城市名，用国家作为兜底描述
-      city = ipData.country === 'China' ? '当前位置' : ipData.country || '当前位置'
+      // 2) 浏览器定位被拒/不可用时，回退到 IP 定位获取经纬度
+      try {
+        const ipRes = await fetch('https://get.geojs.io/v1/ip/geo.json')
+        const ipData = await ipRes.json()
+        lat = parseFloat(ipData.latitude)
+        lon = parseFloat(ipData.longitude)
+      } catch {
+        /* IP 定位也失败则进入下方抛错分支 */
+      }
     }
 
     if (lat === undefined || lon === undefined || Number.isNaN(lat) || Number.isNaN(lon)) {
       throw new Error('无法获取当前位置')
     }
 
-    // 3) 使用 Open-Meteo 免费天气接口（无需 API Key）
+    // 3) 经纬度 → 真实城市名（核心修复点）
+    const cityName = await reverseGeocode(lat, lon)
+
+    // 4) Open-Meteo 免费天气接口（无需 API Key）
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode` +
@@ -644,8 +651,7 @@ async function loadWeather() {
 
     const current = data.current_weather || {}
     const daily = data.daily || {}
-    // 浏览器定位未拿到城市名时，用 Open-Meteo 返回的时区做兜底显示
-    weather.city = city || data.timezone?.replace(/_/g, ' ') || '当前位置'
+    weather.city = cityName || '当前位置'
     weather.currentTemp = current.temperature
     weather.desc = wmoToChinese(current.weathercode)
     weather.maxTemp = daily.temperature_2m_max?.[0]

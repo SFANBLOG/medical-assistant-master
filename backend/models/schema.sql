@@ -33,11 +33,15 @@ CREATE TABLE IF NOT EXISTS documents (
     file_path   VARCHAR(512) NOT NULL,
     file_type   VARCHAR(32)  NOT NULL,
     visibility  VARCHAR(16)  NOT NULL DEFAULT 'public',
-    chunk_count INT          NOT NULL DEFAULT 0,
-    status      VARCHAR(16)  NOT NULL DEFAULT 'processing',
-    error       TEXT,
-    indexed_at  DATETIME     NULL,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    chunk_count   INT          NOT NULL DEFAULT 0,
+    status        VARCHAR(16)  NOT NULL DEFAULT 'processing',
+    review_status VARCHAR(16)  NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected（人工复核）',
+    reviewer_id   INT          NULL,
+    reviewed_at   DATETIME     NULL,
+    review_note   VARCHAR(512) NULL,
+    error         TEXT,
+    indexed_at    DATETIME     NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_doc_kb FOREIGN KEY (kb_id) REFERENCES knowledge_bases (id) ON DELETE CASCADE
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
@@ -114,6 +118,10 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id VARCHAR(36) NOT NULL,
     role            VARCHAR(16) NOT NULL,
     content         TEXT        NOT NULL,
+    review_status   VARCHAR(16) NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected（人工复核）',
+    reviewer_id     INT         NULL,
+    reviewed_at     DATETIME    NULL,
+    review_note     VARCHAR(512) NULL,
     created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_msg_conv FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
 ) ENGINE = InnoDB

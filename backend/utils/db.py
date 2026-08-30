@@ -173,6 +173,9 @@ def init_schema():
             cur.execute(stmt)
         conn.commit()
         print(f"[DB] Schema 初始化完成（{DB_TYPE}）")
+
+        # 对已有数据库做增量迁移（HITL 复核字段）
+        _run_hitl_migrations()
     except Exception as e:
         conn.rollback()
         print(f"[DB] Schema 初始化失败: {e}")
@@ -180,3 +183,67 @@ def init_schema():
     finally:
         cur.close()
         conn.close()
+
+
+def _column_exists(table: str, column: str) -> bool:
+    """检查表中是否存在指定列。"""
+    if DB_TYPE == "mysql":
+        try:
+            row = fetchone(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
+                (table, column),
+            )
+            return bool(row)
+        except Exception:
+            return False
+    else:
+        try:
+            rows = fetchall(f"PRAGMA table_info({table})")
+            return any(r.get("name") == column for r in rows)
+        except Exception:
+            return False
+
+
+def _run_hitl_migrations():
+    """
+    HITL（人工复核）相关字段的增量迁移。
+
+    旧数据库可能没有 review_status / reviewer_id / reviewed_at / review_note 字段，
+    这里通过 ALTER TABLE 安全补全，并把历史数据默认标记为 approved，避免检索/复核功能 500。
+    """
+    now_sql = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
+
+    # ---- documents 表 ----
+    if not _column_exists("documents", "review_status"):
+        execute(
+            f"ALTER TABLE documents ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved' "
+            f"COMMENT 'pending/approved/rejected（人工复核）'"
+        )
+        execute(f"UPDATE documents SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
+        print("[DB] documents.review_status 迁移完成")
+
+    for col, typ in [
+        ("reviewer_id", "INT UNSIGNED NULL"),
+        ("reviewed_at", "DATETIME NULL"),
+        ("review_note", "VARCHAR(512) NULL"),
+    ]:
+        if not _column_exists("documents", col):
+            execute(f"ALTER TABLE documents ADD COLUMN {col} {typ}")
+
+    # ---- messages 表 ----
+    if not _column_exists("messages", "review_status"):
+        execute(
+            f"ALTER TABLE messages ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved' "
+            f"COMMENT 'pending/approved/rejected（人工复核）'"
+        )
+        execute(f"UPDATE messages SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
+        print("[DB] messages.review_status 迁移完成")
+
+    for col, typ in [
+        ("reviewer_id", "INT UNSIGNED NULL"),
+        ("reviewed_at", "DATETIME NULL"),
+        ("review_note", "VARCHAR(512) NULL"),
+    ]:
+        if not _column_exists("messages", col):
+            execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")

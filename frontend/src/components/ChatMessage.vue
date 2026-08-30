@@ -13,12 +13,13 @@
           <span class="dot"></span>
           <span class="dot"></span>
         </div>
-        <!-- 内容 -->
-        <div v-else class="content">{{ message.content }}</div>
+        <!-- 内容：流式输出阶段按纯文本展示，避免半截标签；结束后渲染为结构化富文本 -->
+        <div v-else-if="message.streaming" class="content">{{ message.content }}</div>
+        <div v-else class="content rich" v-html="renderedHtml"></div>
         <div v-if="message.error" class="err-tip">（本次回答可能不完整）</div>
       </div>
 
-      <!-- 引用来源 -->
+      <!-- 相关文档：回答生成后，列出与用户问题最相关的检索来源 -->
       <div
         v-if="
           message.role === 'assistant' &&
@@ -29,7 +30,7 @@
       >
         <div class="cite-toggle" @click="citeVisible = !citeVisible">
           <el-icon><Document /></el-icon>
-          <span>引用来源（{{ message.citations.length }}）</span>
+          <span>相关文档（与您问题最相关 · {{ message.citations.length }}）</span>
           <el-icon class="cite-arrow">
             <ArrowUp v-if="citeVisible" />
             <ArrowDown v-else />
@@ -46,7 +47,7 @@
                 <span class="cite-idx">[{{ i + 1 }}]</span>
                 <span class="cite-title">{{ c.title || `文档 ${c.doc_id}` }}</span>
                 <el-tag size="small" type="info" effect="plain">
-                  相似度 {{ formatSimilarity(c.similarity) }}
+                  相关度 {{ formatSimilarity(c.similarity) }}
                 </el-tag>
               </div>
               <div class="cite-text">{{ c.source_text }}</div>
@@ -59,12 +60,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { Message } from '@/types'
+import { renderRichText } from '@/utils/richtext'
 
-defineProps<{ message: Message }>()
+const props = defineProps<{ message: Message }>()
 
 const citeVisible = ref(true)
+
+// 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
+const renderedHtml = computed(() =>
+  props.message.streaming ? '' : renderRichText(props.message.content),
+)
 
 function formatSimilarity(v: number | undefined): string {
   if (v === undefined || v === null) return '-'
@@ -140,6 +147,34 @@ function formatSimilarity(v: number | undefined): string {
 .content {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 结构化富文本（一、二、三 → 有序/无序列表、段落） */
+.rich {
+  white-space: normal;
+}
+.rich p {
+  margin: 0 0 10px;
+}
+.rich p:last-child {
+  margin-bottom: 0;
+}
+.rich-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.rich-list:last-child {
+  margin-bottom: 0;
+}
+.rich ol.rich-list {
+  list-style: decimal;
+}
+.rich ul.rich-list {
+  list-style: disc;
+}
+.rich-list li {
+  margin: 4px 0;
+  line-height: 1.7;
 }
 
 .err-tip {
