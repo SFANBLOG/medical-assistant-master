@@ -149,7 +149,13 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-xxx}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-deepseek-chat}
-      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-}
+      # 刻意写死为空、不从根目录 .env 继承：.env 里的 ./backend/data/models/bge-base-zh-v1.5
+      # 在宿主机上并不存在（实际是 HF 缓存格式 models/models/BAAI--bge-base-zh-v1.5），
+      # 且容器默认未装 sentence-transformers/torch，继承过去只会打印「加载失败/回退」。
+      # 留空 = 使用内置确定性哈希向量（零依赖、离线可用、启动零报错），
+      # 检索质量由 BM25 稀疏检索 + 融合重排兜底。
+      # 需要真实 BGE 语义向量：见 .dockerignore 中 INSTALL_LOCAL_EMBED 的说明。
+      OPENAI_EMBED_MODEL: ""
       EMBED_DIM: ${EMBED_DIM:-768}
       CHUNK_SIZE: ${CHUNK_SIZE:-500}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-80}
@@ -166,7 +172,9 @@ services:
       DENSE_MIN_SIMILARITY: ${DENSE_MIN_SIMILARITY:-0.0}
       RERANK_TOP_K: ${RERANK_TOP_K:-5}
       RERANK_MIN_SCORE: ${RERANK_MIN_SCORE:-0.12}
-      RERANK_MODEL_PATH: ${RERANK_MODEL_PATH:-auto}
+      # 留空 = 关闭 Cross-Encoder，直接用「稠密 + BM25 + 词面」融合打分，
+      # 无需 sentence-transformers/torch，启动不会打印模型加载失败。
+      RERANK_MODEL_PATH: ""
       BACKEND_PORT: 8010
       JWT_SECRET: ${JWT_SECRET:-medical-assistant-secret-key-2024}
     ports:
@@ -184,8 +192,10 @@ services:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/api/health').status==200 else 1)\""]
       interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      # gunicorn --preload 下，master 进程需先完成「建库建表 + 播种 241 篇文档 +
+      # 写入 Milvus」才会 fork worker，这段时间 /api/health 无响应是正常的。
+      start_period: 300s
     restart: unless-stopped
 
   frontend:

@@ -33,6 +33,16 @@ RUN if [ "$INSTALL_OCR" = "true" ]; then \
         && pip install --no-cache-dir --no-deps opencv-python-headless ; \
     fi
 
+# 容器内真实语义向量（BGE）默认关闭：torch CPU 轮约 800MB + sentence-transformers，
+# 构建耗时长、镜像体积翻倍。默认走内置确定性哈希向量（零依赖、离线可用、不报错）。
+# 需要时构建：docker compose build --build-arg INSTALL_LOCAL_EMBED=true backend
+ARG INSTALL_LOCAL_EMBED=false
+RUN if [ "$INSTALL_LOCAL_EMBED" = "true" ]; then \
+        pip install --no-cache-dir --retries 3 --timeout 120 \
+            torch --index-url https://download.pytorch.org/whl/cpu \
+        && pip install --no-cache-dir --retries 3 --timeout 120 sentence-transformers ; \
+    fi
+
 # 复制后端代码与 gunicorn 入口
 COPY backend/ ./backend/
 COPY wsgi.py ./wsgi.py
@@ -43,4 +53,7 @@ RUN mkdir -p /app/backend/data/uploads
 EXPOSE 8010
 
 # gunicorn 绑定 0.0.0.0:8010；wsgi:app 为已实例化的 Flask 应用
-CMD ["gunicorn", "--bind", "0.0.0.0:8010", "--workers", "4", "--threads", "2", "--timeout", "120", "wsgi:app"]
+# --preload 必需：wsgi.py 在导入时执行 init_database()（建库建表 + 播种 241 篇文档）。
+# 不加 --preload 时 4 个 worker 会各自导入一次，并发重复播种导致主键冲突/重复数据；
+# 加 --preload 后由 master 进程导入一次，再 fork 出 worker，初始化只跑一遍。
+CMD ["gunicorn", "--preload", "--bind", "0.0.0.0:8010", "--workers", "4", "--threads", "2", "--timeout", "120", "wsgi:app"]
