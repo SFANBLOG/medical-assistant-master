@@ -1,19 +1,28 @@
 """
-混合检索器：BM25 稀疏 + 稠密向量 + Cross-Encoder 重排。
+混合检索器：BM25 稀疏 + BGE 稠密向量 + Cross-Encoder 重排 + 查询扩展。
 
-检索流水线（与需求文档一致）：
+检索流水线：
 
-    原始文档库
+    用户查询
         ↓
-    1. BM25 稀疏检索（召回 top30） + Embedding 稠密向量检索（召回 top30）
+    0. 查询扩展（医学同义词 → 增强查询）
+        ↓
+    1. BM25 稀疏检索（召回 top30，jieba 分词）
+       + BGE 稠密向量检索（召回 top30，真实语义嵌入）
         ↓
     2. 合并、去重得到候选集（约 40-50 条）
         ↓
-    3. Cross-Encoder Reranker 重排序，过滤低相关文档，取 top-3~top-5
+    3. Cross-Encoder Reranker 重排序（真实模型 / 增强融合）
+       → 过滤低相关文档，取 top-3~top-5
         ↓
-    4. 将 top-N 文档作为上下文喂给 LLM 生成答案
+    4. 分数校准 → 补元数据 → 返回
 
-流程：query → embed → [向量检索 | BM25 检索] → 合并去重 → 重排过滤 → 补元数据
+关键改进（v2）：
+- BGE 真实语义嵌入替代 MD5 哈希向量（核心修复）
+- jieba 分词替代 单字+bigram（BM25 召回质量提升）
+- 查询扩展（医学同义词）提升召回率
+- 增强融合算法（位置加权/密度奖励/长度惩罚）
+- 分数校准到直觉百分比区间
 """
 from typing import Optional
 
@@ -29,6 +38,120 @@ from backend.utils.db import fetchall
 # ---- BM25 索引（懒加载单例，随向量库内容构建一次）----
 _bm25_index: Optional[BM25Index] = None
 _bm25_built_for_count: int = -1
+
+# ---- 医学同义词表（查询扩展用）----
+_MEDICAL_SYNONYMS: dict[str, list[str]] = {
+    # === 发热/体温 ===
+    "发热": ["发烧", "体温升高", "高热", "低热", "体温异常", "发热待查"],
+    "发烧": ["发热", "体温升高", "高热"],
+    "体温": ["温度", "体温度数", "热度", "℃"],
+    "高热": ["高烧", "39度以上", "超高热"],
+    "退烧": ["降温", "退热", "物理降温", "药物降温"],
+
+    # === 人群 ===
+    "儿童": ["小儿", "小孩", "幼儿", "婴幼儿", "孩童", "宝宝", "患儿"],
+    "小孩": ["儿童", "小儿", "幼儿"],
+    "婴儿": ["婴幼儿", "新生儿", "小宝宝"],
+    "成人": ["成年人", "大人", "成人患者"],
+    "老人": ["老年人", "高龄", "长者", "老年患者"],
+
+    # === 动作/ urgency ===
+    "立刻": ["马上", "立即", "赶紧", "迅速", "及时", "尽快"],
+    "就医": ["看医生", "去医院", "就诊", "挂号", "求医", "急诊", "尽早就医"],
+    "需要": ["应该", "必须", "要", "建议", "推荐"],
+    "不用": ["不必", "不需要", "不建议", "避免", "无需"],
+
+    # === 呼吸系统 ===
+    "咳嗽": ["咳", "干咳", "咳喘", "咳嗽咳痰"],
+    "肺炎": ["肺部感染", "肺感染", "大叶性肺炎", "支气管肺炎"],
+    "感冒": ["上感", "上呼吸道感染", "流感", "普通感冒", "急性鼻炎"],
+    "哮喘": ["支气管哮喘", "喘息", "气喘"],
+    "腹泻": ["拉肚子", "腹泻", "便溏", "消化不良", "急性胃肠炎"],
+    "呕吐": ["恶心呕吐", "反胃", "呕逆"],
+
+    # === 症状 ===
+    "疼痛": ["痛", "疼", "酸痛", "胀痛", "刺痛", "绞痛"],
+    "头痛": ["头疼", "头晕头痛", "偏头痛"],
+    "腹痛": ["肚子疼", "胃痛", "腹疼", "腹部疼痛"],
+    "胸痛": ["胸闷", "胸口痛", "胸骨后疼痛"],
+    "皮疹": ["红疹", "斑疹", "丘疹", "皮肤红点", "出疹子"],
+    "惊厥": ["抽搐", "抽风", "惊风", "癫痫发作", "意识丧失"],
+    "脱水": ["缺水", "体液不足", "口干尿少"],
+    "休克": ["血压下降", "循环衰竭", "意识模糊", "四肢湿冷"],
+    "昏迷": ["意识不清", "神志不清", "失去意识", "不醒"],
+
+    # === 过敏/免疫 ===
+    "过敏": ["变态反应", "过敏性", "敏感", "过敏反应", "荨麻疹"],
+    "疫苗": ["疫苗接种", "预防针", "免疫接种"],
+
+    # === 感染 ===
+    "细菌": ["细菌感染", "革兰阳性菌", "革兰阴性菌"],
+    "病毒": ["病毒感染", "呼吸道病毒", "肠道病毒"],
+    "感染": ["发炎", "炎症反应", "传染"],
+
+    # === 就医判断关键词 ===
+    "严重": ["危急", "重症", "厉害", "剧烈", "加重", "恶化"],
+    "危险": ["风险", "高危", "隐患", "并发症"],
+    "症状": ["表现", "征象", "迹象", "不适", "主诉"],
+    "原因": ["病因", "诱因", "起因", "病原"],
+    "预防": ["防止", "避免", "防护", "注意事项", "护理"],
+}
+
+
+def _expand_query(query: str) -> str:
+    """
+    查询扩展 v2：在原始查询后追加医学同义词，提升 BM25 召回率。
+
+    策略（v2 改进）：
+    1. 按语义角色分类扩展（人群/症状/动作/urgency），每类最多 2 个
+    2. 优先短词（BM25 对短词匹配更精确）
+    3. 总共最多追加 6 个词（比 v1 的 4 个稍宽松）
+    4. 避免添加查询中已存在的词
+    """
+    # 按角色分类收集候选同义词
+    role_groups: dict[str, list[str]] = {
+        "symptom": [],   # 症状类
+        "population": [], # 人群类
+        "action": [],    # 动作/就医类
+        "urgency": [],   # 紧急程度类
+        "other": [],
+    }
+
+    # 角色映射
+    _ROLE_MAP: dict[str, str] = {
+        "发热": "symptom", "发烧": "symptom", "体温": "symptom", "高热": "symptom",
+        "咳嗽": "symptom", "肺炎": "symptom", "腹泻": "symptom", "疼痛": "symptom",
+        "头痛": "symptom", "皮疹": "symptom", "惊厥": "symptom", "呕吐": "symptom",
+        "过敏": "symptom", "感染": "symptom", "休克": "symptom", "脱水": "symptom",
+        "儿童": "population", "小儿": "population", "婴儿": "population",
+        "成人": "population", "老人": "population",
+        "就医": "action", "就诊": "action", "治疗": "action", "预防": "action",
+        "立刻": "urgency", "马上": "urgency", "及时": "urgency", "需要": "urgency",
+        "严重": "urgency", "危险": "urgency",
+    }
+
+    added: list[str] = []
+    for term, synonyms in _MEDICAL_SYNONYMS.items():
+        if term not in query:
+            continue
+        role = _ROLE_MAP.get(term, "other")
+        for syn in synonyms:
+            if syn not in query and syn not in added:
+                role_groups[role].append(syn)
+
+    # 每个角色组取前 2 个，总共最多 6 个
+    for role in ["symptom", "population", "action", "urgency", "other"]:
+        for syn in role_groups[role][:2]:
+            added.append(syn)
+            if len(added) >= 6:
+                break
+        if len(added) >= 6:
+            break
+
+    if added:
+        expanded = query + " " + " ".join(added)
+        return expanded
+    return query
 
 
 def _ensure_bm25() -> Optional[BM25Index]:
@@ -94,11 +217,12 @@ def retrieve(
         min_similarity=min_similarity,
     )
 
-    # 1b. BM25 稀疏检索（召回 top BM25_TOP_K）
+    # 1b. BM25 稀疏检索（用扩展查询召回 top BM25_TOP_K）
     bm25_hits: list[dict] = []
     bm25 = _ensure_bm25()
     if bm25 is not None:
-        bm25_hits = bm25.search(query, kb_ids, top_k=config.BM25_TOP_K)
+        expanded_query = _expand_query(query)
+        bm25_hits = bm25.search(expanded_query, kb_ids, top_k=config.BM25_TOP_K)
 
     # ---- 阶段2：合并、去重得到候选集 ----
     candidates: dict[tuple, dict] = {}

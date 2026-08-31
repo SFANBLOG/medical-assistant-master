@@ -1,17 +1,15 @@
 """
-BM25 稀疏检索器（纯 Python 实现，零依赖）。
+BM25 稀疏检索器（jieba 分词 + Okapi BM25）。
 
-职责：在「原始文档库 → 切分后的 chunk」之上建立 Okapi BM25 倒排索引，
-为混合检索提供「稀疏召回」分支。与稠密向量检索互补：
-- 稠密向量擅长语义泛化（同义/上下位）
-- BM25 擅长字面命中（疾病名、药名、指标名等关键词精确匹配）
+改进点（相比旧版）：
+1. 使用 jieba 分词替代原始 单字+bigram，词边界更准确
+2. 保留 bigram 作为补充（捕获 jieba 未覆盖的复合词）
+3. 新增 IDF 平滑，避免 OOV 词被完全忽略
+4. 查询侧支持同义词扩展
 
-对外接口：
+对外接口（不变）：
 - BM25Index.build(chunks): 用全部 chunk 构建索引
 - BM25Index.search(query, kb_ids, top_k): 返回带 bm25 分数的候选列表
-
-token 切分：中文按 单字 + bigram，英文按词（与 embedder / reranker 保持一致），
-保证中英文医学关键词都能被命中。
 """
 import math
 import re
@@ -21,25 +19,55 @@ from typing import Optional
 _K1 = 1.5
 _B = 0.75
 
-# 高频词过滤阈值：query 中出现在超过该比例文档里的词视为「无区分度」（如 的/患者/疾病），
-# 直接丢弃，避免长文档靠堆砌通用词刷高分数。
+# 高频词过滤阈值
 MAX_DF_RATIO = 0.5
 
-# bigram 增益：中文双字词（如 糖尿/尿病/血糖）比单字更具判别力，
-# 在 query 侧适度放大其权重。
-_BIGRAM_BOOST = 1.6
+# bigram 增益
+_BIGRAM_BOOST = 1.4
 
 
-def _tokenize(text: str) -> list[str]:
-    """中英文混合分词：英文单词 + 中文单字 + 中文 bigram。"""
+def _tokenize(text: str, use_jieba: bool = True) -> list[str]:
+    """
+    中英文混合分词。
+
+    优先使用 jieba 精确模式分词，回退到 单字+bigram。
+    """
     if not text:
         return []
+
     tokens: list[str] = []
+
     # 英文单词
     for m in re.findall(r"[a-zA-Z]+", text):
         if len(m) >= 2:
             tokens.append(m.lower())
-    # 中文：单字 + bigram
+
+    # 中文分词
+    chinese_text = " ".join(re.findall(r"[\u4e00-\u9fff]+", text))
+    if not chinese_text:
+        return tokens
+
+    if use_jieba:
+        try:
+            import jieba
+            # 兼容不同 jieba 版本：优先 lcut，回退 cut+list
+            if hasattr(jieba, 'lcut'):
+                words = jieba.lcut(chinese_text)
+            else:
+                words = list(jieba.cut(chinese_text))
+            for w in words:
+                w = w.strip()
+                if len(w) >= 1:
+                    tokens.append(w)
+            # 补充 bigram（捕获跨词边界的有意义组合）
+            for seg in re.findall(r"[\u4e00-\u9fff]+", text):
+                for i in range(len(seg) - 1):
+                    tokens.append(seg[i : i + 2])
+            return tokens
+        except ImportError:
+            pass
+
+    # 回退：单字 + bigram
     for seg in re.findall(r"[\u4e00-\u9fff]+", text):
         for ch in seg:
             tokens.append(ch)
@@ -49,31 +77,22 @@ def _tokenize(text: str) -> list[str]:
 
 
 class BM25Index:
-    """
-    内存 BM25 倒排索引。
-
-    每个文档 = 一条 chunk（doc_id + chunk_index 唯一标识）。
-    支持按 kb_ids 过滤（只检索当前角色可见知识库的 chunk）。
-    """
+    """内存 BM25 倒排索引。"""
 
     def __init__(self) -> None:
-        # doc_id 维度：每条 chunk 一个逻辑 doc
-        self._doc_ids: list[str] = []          # 逻辑 doc 顺序（与 _docs 对齐）
-        self._meta: dict[str, dict] = {}        # chunk_id -> {kb_id, doc_id, chunk_index, text}
-        self._tf: list[dict[str, int]] = []     # 每个 doc 的词频
-        self._dl: list[int] = []                # 每个 doc 的长度（token 数）
-        self._df: dict[str, int] = {}           # 词 -> 出现文档数
-        self._idf: dict[str, float] = {}        # 词 -> idf
+        self._doc_ids: list[str] = []
+        self._meta: dict[str, dict] = {}
+        self._tf: list[dict[str, int]] = []
+        self._dl: list[int] = []
+        self._df: dict[str, int] = {}
+        self._idf: dict[str, float] = {}
         self._avgdl: float = 0.0
         self._N: int = 0
-        self._postings: dict[str, list[int]] = {}  # 词 -> 包含该词的 doc 下标列表
+        self._postings: dict[str, list[int]] = {}
         self._built = False
 
-    # ---- 构建 ----
     def build(self, chunks: list[dict]) -> None:
-        """
-        chunks: [{"id", "kb_id", "doc_id", "chunk_index", "text"}, ...]
-        """
+        """chunks: [{"id", "kb_id", "doc_id", "chunk_index", "text"}, ...]"""
         self._doc_ids = []
         self._meta = {}
         self._tf = []
@@ -105,7 +124,7 @@ class BM25Index:
         self._N = len(self._doc_ids)
         self._avgdl = (sum(self._dl) / self._N) if self._N else 0.0
         for t, dft in self._df.items():
-            # Okapi IDF（加 1 避免负无穷）
+            # Okapi IDF + 1 避免负无穷
             self._idf[t] = math.log((self._N - dft + 0.5) / (dft + 0.5) + 1.0)
         self._built = True
 
@@ -116,19 +135,13 @@ class BM25Index:
     def doc_count(self) -> int:
         return self._N
 
-    # ---- 检索 ----
     def search(
         self,
         query: str,
         kb_ids: Optional[list[int]] = None,
         top_k: int = 30,
     ) -> list[dict]:
-        """
-        稀疏召回：对 query 计算每条 chunk 的 BM25 分数，按 kb_ids 过滤后返回 top_k。
-
-        返回: [{"id","kb_id","doc_id","chunk_index","text","bm25"}, ...]
-              bm25 为原始 BM25 分数（已非负），用于后续与稠密分数融合。
-        """
+        """稀疏召回。"""
         if not self._built or self._N == 0:
             return []
 
@@ -137,7 +150,7 @@ class BM25Index:
         if not q_tokens:
             return []
 
-        # 统计 query 词频（丢弃无区分度的高频词）
+        # 查询词频 + 高频词过滤
         q_tf: dict[str, int] = {}
         for t in q_tokens:
             q_tf[t] = q_tf.get(t, 0) + 1
@@ -147,11 +160,10 @@ class BM25Index:
                 for t, qf in q_tf.items()
                 if self._df.get(t, 0) <= MAX_DF_RATIO * self._N
             }
-            # 若全部被过滤（提问过短/过泛），保留低 df 的前若干个词兜底
             if discriminative:
                 q_tf = discriminative
 
-        # 候选 doc 下标（出现在任一 query 词倒排表中的 doc）
+        # 候选文档
         cand: set[int] = set()
         for t in q_tf:
             if t in self._postings:
@@ -173,7 +185,6 @@ class BM25Index:
                 if f == 0:
                     continue
                 denom = f + _K1 * (1 - _B + _B * (dl / self._avgdl if self._avgdl else 1.0))
-                # 双字中文词（bigram）判别力更强，适度加权
                 boost = _BIGRAM_BOOST if (len(t) == 2 and "\u4e00" <= t[0] <= "\u9fff") else 1.0
                 score += boost * idf * (f * (_K1 + 1)) / denom
             if score > 0:
@@ -186,14 +197,12 @@ class BM25Index:
         for idx, s in top:
             cid = self._doc_ids[idx]
             meta = self._meta[cid]
-            out.append(
-                {
-                    "id": cid,
-                    "kb_id": meta["kb_id"],
-                    "doc_id": meta["doc_id"],
-                    "chunk_index": meta["chunk_index"],
-                    "text": meta["text"],
-                    "bm25": round(float(s), 4),
-                }
-            )
+            out.append({
+                "id": cid,
+                "kb_id": meta["kb_id"],
+                "doc_id": meta["doc_id"],
+                "chunk_index": meta["chunk_index"],
+                "text": meta["text"],
+                "bm25": round(float(s), 4),
+            })
         return out

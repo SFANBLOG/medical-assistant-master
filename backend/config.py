@@ -36,7 +36,9 @@ MILVUS_CONNECT_TIMEOUT = int(os.getenv("MILVUS_CONNECT_TIMEOUT", "3"))
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "deepseek-chat")
-OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "")
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "auto")
+# 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 BGE 模型（优先 bge-small-zh-v1.5）；
+# 设为具体路径或 HuggingFace repo_id 可覆盖自动检测。
 
 # ---- RAG 参数 ----
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
@@ -67,6 +69,9 @@ RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.12"))
 RERANK_W_DENSE = float(os.getenv("RERANK_W_DENSE", "0.55"))
 RERANK_W_BM25 = float(os.getenv("RERANK_W_BM25", "0.30"))
 RERANK_W_LEXICAL = float(os.getenv("RERANK_W_LEXICAL", "0.15"))
+# Cross-Encoder 模型路径（留空或 "auto" 则用融合模式；推荐 BAAI/bge-reranker-v2-min）
+RERANK_MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "auto")
+# 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 CE 模型，找不到则用增强融合。
 
 # ---- 服务端口 ----
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8010"))
