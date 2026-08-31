@@ -8,6 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# PyPI 镜像源：默认用阿里云（国内约 400KB/s，官方源在部分网络下仅 ~15KB/s，
+# 能让依赖安装从 40+ 分钟降到几分钟）。海外环境可覆盖：
+#   docker compose build --build-arg PIP_INDEX_URL=https://pypi.org/simple backend
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
 # 编译期系统依赖（pymilvus / grpcio 等可能需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -19,8 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 必须先升级 pip 再安装依赖。
 COPY backend/requirements.txt ./backend/requirements.txt
 COPY backend/requirements-ocr.txt ./backend/requirements-ocr.txt
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir --retries 3 --timeout 60 -r backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip -i ${PIP_INDEX_URL}
+RUN pip install --no-cache-dir --retries 3 --timeout 120 -r backend/requirements.txt -i ${PIP_INDEX_URL}
 
 # OCR（扫描件 / 图片识别）默认关闭：onnxruntime + opencv 约 200MB 且构建慢，
 # 非 headless 的 opencv-python 在 slim 镜像里 import cv2 还会缺 libxcb/libGL。
@@ -28,7 +33,7 @@ RUN pip install --no-cache-dir --retries 3 --timeout 60 -r backend/requirements.
 ARG INSTALL_OCR=false
 RUN if [ "$INSTALL_OCR" = "true" ]; then \
         pip install --no-cache-dir --retries 3 --timeout 60 \
-            -r backend/requirements-ocr.txt \
+            -r backend/requirements-ocr.txt -i ${PIP_INDEX_URL} \
         && pip uninstall -y opencv-python \
         && pip install --no-cache-dir --no-deps opencv-python-headless ; \
     fi
@@ -40,7 +45,7 @@ ARG INSTALL_LOCAL_EMBED=false
 RUN if [ "$INSTALL_LOCAL_EMBED" = "true" ]; then \
         pip install --no-cache-dir --retries 3 --timeout 120 \
             torch --index-url https://download.pytorch.org/whl/cpu \
-        && pip install --no-cache-dir --retries 3 --timeout 120 sentence-transformers ; \
+        && pip install --no-cache-dir --retries 3 --timeout 120 sentence-transformers -i ${PIP_INDEX_URL} ; \
     fi
 
 # 复制后端代码与 gunicorn 入口
