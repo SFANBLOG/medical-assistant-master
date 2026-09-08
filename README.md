@@ -433,8 +433,9 @@ gunicorn -c gunicorn.conf.py wsgi:app     # 0.0.0.0:8010，4 进程 × 2 线程�
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `500` / `80` | 文档切分参数 |
-| `TOP_K` / `MIN_SIMILARITY` | `5` / `0.30` | 召回条数与相似度下限 |
+| `TOP_K` / `MIN_SIMILARITY` | `5` / `0.30` | 通用接口默认值（主链路由下表的稠密预滤 + 重排阈值裁决） |
 | `BM25_TOP_K` / `DENSE_TOP_K` | `30` / `30` | 两路召回候选量 |
+| `DENSE_MIN_SIMILARITY` | `0.0` | 稠密分支相似度下限（仅滤明显噪声，低相关交由重排裁决） |
 | `RERANK_TOP_K` / `RERANK_MIN_SCORE` | `8` / `0.45` | 重排保留条数 / 相关性下限（<0.45 不入 LLM 上下文） |
 | `RERANK_W_DENSE` / `W_BM25` / `W_LEXICAL` | `0.55` / `0.30` / `0.15` | 融合权重 |
 | `RERANK_USE_CE` | `false` | Cross-Encoder 增强（默认关；true 时与融合取 max，只升不降） |
@@ -607,7 +608,7 @@ Cross-Encoder 增强经 `bge-reranker-base`（零增益）与 `bge-reranker-v2-m
 | 检索结果不理想 | 哈希向量语义能力弱。运行 `python backend/download_model.py` 下载 BGE，或设 `OPENAI_EMBED_MODEL` 指向本地模型目录 |
 | AI 回答质量差 | 未配 `OPENAI_API_KEY`，当前走离线兜底生成。配置任意 OpenAI 兼容端点即可 |
 | 新上传文档检索不到 | 文档默认 `pending`，需医生/管理员复核通过后才进入 RAG 上下文 |
-| 知识库为空 / Milvus `row_count=0` | 多为 pymilvus 版本钉错（`<2.4.0` 的 `MilvusClient` 无 `flush`）或空卷陷阱。确认 `requirements.txt` 为 `>=3.0.1,<3.1.0`，必要时清卷重建（见 [8.1](#八快速开始docker--本地--生产)） |
+| 知识库为空 / Milvus `row_count=0` | 多为 pymilvus 版本钉错（`<2.4.0` 的 `MilvusClient` 无 `flush`）或空卷陷阱。确认 `requirements.txt` 为 `>=3.0.1,<3.1.0`，必要时清卷重建（见 [8.1](#81-方式一docker-compose-一键部署推荐)） |
 | 依赖装不上 | 误用了根目录 `requirements.txt`（Anaconda 冻结产物），请改用 `backend/requirements.txt` |
 | PDF 解析为空 | 扫描件无文本层，需装 OCR：`pip install -r backend/requirements-ocr.txt` |
 | 端口冲突 | 后端 `BACKEND_PORT`（默认 8010）；Docker 下 MySQL 映射宿主机 **3307** 而非 3306 |
@@ -621,7 +622,7 @@ Cross-Encoder 增强经 `bge-reranker-base`（零增益）与 `bge-reranker-v2-m
 
 1. **提 Bug / 建议**：提交 Issue，请附上复现步骤、日志与环境（OS / Python / 是否 Docker）；
 2. **贡献代码**：Fork 本仓库 → 新建特性分支 → 提交 Pull Request。请保持现有代码风格（中文注释、模块头 docstring 说明职责）；
-3. **贡献医学文档**：按 [8.3 知识库文档维护](#八快速开始docker--本地--生产) 的目录规范添加 `.md` 文档（标注来源与适用人群），供 RAG 检索与教学演示使用。
+3. **贡献医学文档**：按 [8.3 知识库文档维护](#83-知识库文档维护) 的目录规范添加 `.md` 文档（标注来源与适用人群），供 RAG 检索与教学演示使用。
 
 ---
 
