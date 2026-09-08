@@ -134,3 +134,5 @@ $RECYCLE.BIN/
 *.temp
 *.swp
 *.swo
+# 知识库扩写断点状态（运行产物）
+scripts/.expand_state.json

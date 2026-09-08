@@ -61,3 +61,7 @@
 - 前端：单文件 `<el-upload>` 已弃用，`KnowledgeBase.vue` 改用隐藏 `<input type="file" multiple>` + 队列面板（按文件显示状态：上传中/成功N分片/失败悬停看错误）。
 - 单请求总大小：`MAX_CONTENT_LENGTH` = 64 MB（`backend/app.py`）。
 - 集成验证脚本：`scripts/test_batch_upload.py`（Flask test_client，无需 MySQL），覆盖 happy path + 空文件 + 不存在 KB 三种情形。
+
+## 删除 = 逻辑删除（2026-09-08 约定）
+- `DELETE /api/kb/<id>`（`delete_knowledge_base`）与 `DELETE /api/kb/documents/<doc_id>`（`delete_document`）**只删向量 + DB 记录，绝不删 `backend/data/uploads/` 磁盘目录/文件**（用户铁律：前端删文档/知识库不得动本地磁盘源文件，便于重新导入与溯源）。
+- 修改点：`backend/services/kb_service.py` 移除 `shutil.rmtree`/`file_path.unlink()` 两段，`import shutil` 已删。
