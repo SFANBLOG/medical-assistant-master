@@ -117,7 +117,7 @@
       <div ref="chatBodyRef" class="chat-body">
         <div v-if="!messages.length" class="welcome">
           <div class="welcome-icon">
-            <el-icon :size="44"><FirstAidKit /></el-icon>
+            <el-icon :size="44"><Monitor /></el-icon>
           </div>
           <h2>你好，{{ displayName }}</h2>
           <p>我是医智助手智能问诊助理，可以帮你解答医疗健康问题。</p>
@@ -207,6 +207,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Monitor } from '@element-plus/icons-vue'
 import { chatApi, kbApi, chatStreamUrl, agentStreamUrl, authHeaders } from '@/api'
 import type { Conversation, Message, KnowledgeBase } from '@/types'
 import { useAuthStore } from '@/stores/auth'
@@ -341,6 +342,8 @@ function newConversation() {
   inputText.value = ''
   // selectedKbId 故意保留，跨会话复用同一检索范围
   showMobileList.value = false
+  // 每次新对话重新随机推荐问题
+  suggestions.value = pickSuggestions()
 }
 
 async function selectConversation(conv: Conversation) {

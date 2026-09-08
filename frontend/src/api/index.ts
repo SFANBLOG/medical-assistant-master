@@ -159,6 +159,30 @@ export const kbApi = {
       `/kb/${kbId}/documents`,
       formData,
     ),
+  /**
+   * 批量上传文档（一个请求里塞多个文件）。
+   * 后端对每个文件独立处理，单个失败不阻塞；返回 per-file 结果 + 汇总。
+   */
+  uploadDocuments: (
+    kbId: number,
+    files: File[],
+    visibility: 'public' | 'private' = 'public',
+  ) => {
+    const form = new FormData()
+    for (const f of files) form.append('files', f, f.name)
+    form.append('visibility', visibility)
+    return post<{
+      results: Array<{
+        filename: string
+        ok: boolean
+        doc_id?: number
+        chunk_count?: number
+        status?: string
+        error?: string
+      }>
+      summary: { total: number; success: number; failed: number }
+    }>(`/kb/${kbId}/documents/batch`, form)
+  },
   deleteDocument: (docId: number) =>
     del<{ message: string }>(`/kb/documents/${docId}`),
 }

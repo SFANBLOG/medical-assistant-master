@@ -8,6 +8,7 @@
     <orderEntry type="jdk" jdkName="C:\huanjing\python\3.11.9\python.exe" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="12-於方仁" />
-    <orderEntry type="module" module-name="What-to-eat-today-main" />
+    <orderEntry type="module" module-name="财务智能问数Agent" />
+    <orderEntry type="module" module-name="医疗导诊助手" />
   </component>
 </module>

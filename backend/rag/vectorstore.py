@@ -379,12 +379,24 @@ class MilvusStore:
     def insert(self, record: VectorRecord):
         self.insert_batch([record])
 
-    def insert_batch(self, records: list[VectorRecord]):
+    def insert_batch(self, records: list[VectorRecord], flush: bool = True):
         if not self._connect() or not records:
             return
         data = self._records_to_dicts(records)
         self._client.insert(collection_name=config.MILVUS_COLLECTION, data=data)
-        self._client.flush(collection_name=config.MILVUS_COLLECTION)
+        # 仅在显式要求时 flush（如运行时单次上传文档）。批量播种时不要逐条 flush，
+        # 否则每个文档一次段封口（segment seal）会极慢；统一在播种结束后 flush 一次。
+        if flush:
+            self._client.flush(collection_name=config.MILVUS_COLLECTION)
+
+    def flush(self):
+        """手动触发一次 flush（批量写入后调用，使数据可检索）。"""
+        if not self._connect():
+            return
+        try:
+            self._client.flush(collection_name=config.MILVUS_COLLECTION)
+        except Exception as e:  # noqa: BLE001
+            print(f"[Milvus] flush 失败: {e}")
 
     def delete_by_doc(self, doc_id: int):
         if not self._connect():

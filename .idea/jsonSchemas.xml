@@ -14,6 +14,9 @@
                   <Item>
                     <option name="path" value="file://$PROJECT_DIR$/../../AILLM-Student/all-agent-study/study/langgraph_cli/langgraph.json" />
                   </Item>
+                  <Item>
+                    <option name="path" value="file://$PROJECT_DIR$/../../AILLM-Student/all-agent-study/langgraph.json" />
+                  </Item>
                 </list>
               </option>
             </SchemaInfo>

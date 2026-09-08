@@ -17,9 +17,8 @@ from typing import Callable, Optional
 
 import requests
 
-from backend import config
-from backend.rag.retriever import retrieve, build_context
 from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import retrieve
 from backend.utils.db import fetchall, fetchone, execute
 
 
@@ -27,11 +26,11 @@ class Tool:
     """单个工具的定义与执行包装。"""
 
     def __init__(
-        self,
-        name: str,
-        description: str,
-        parameters: dict,
-        func: Callable,
+            self,
+            name: str,
+            description: str,
+            parameters: dict,
+            func: Callable,
     ):
         self.name = name
         self.description = description
@@ -145,11 +144,18 @@ def _query_hospitalizations(state: dict, keyword: str) -> str:
     like = f"%{keyword}%"
     rows = fetchall(
         """
-        SELECT h.id, u.name AS patient_name, h.department, h.ward,
-               h.admit_date, h.discharge_date, h.diagnosis
+        SELECT h.id,
+               u.name AS patient_name,
+               h.department,
+               h.ward,
+               h.admit_date,
+               h.discharge_date,
+               h.diagnosis
         FROM hospitalizations h
-        LEFT JOIN users u ON h.patient_id = u.id
-        WHERE u.name LIKE %s OR h.department LIKE %s OR h.diagnosis LIKE %s
+                 LEFT JOIN users u ON h.patient_id = u.id
+        WHERE u.name LIKE %s
+           OR h.department LIKE %s
+           OR h.diagnosis LIKE %s
         ORDER BY h.admit_date DESC
         LIMIT 10
         """,
@@ -161,8 +167,8 @@ def _query_hospitalizations(state: dict, keyword: str) -> str:
     for r in rows:
         dis = r.get("discharge_date") or "在院"
         lines.append(
-            f"住院号{r['id']}：患者 {r.get('patient_name','?')}，科室 {r.get('department','')}"
-            f"，病房 {r.get('ward','')}，诊断 {r.get('diagnosis','')}，"
+            f"住院号{r['id']}：患者 {r.get('patient_name', '?')}，科室 {r.get('department', '')}"
+            f"，病房 {r.get('ward', '')}，诊断 {r.get('diagnosis', '')}，"
             f"入院 {r.get('admit_date')}，出院 {dis}。"
         )
     return "\n".join(lines)
@@ -175,8 +181,9 @@ def _query_appointments(state: dict, keyword: str) -> str:
         """
         SELECT a.id, u.name AS patient_name, a.department, a.appointment_time, a.status, a.reason
         FROM appointments a
-        LEFT JOIN users u ON a.patient_id = u.id
-        WHERE u.name LIKE %s OR a.department LIKE %s
+                 LEFT JOIN users u ON a.patient_id = u.id
+        WHERE u.name LIKE %s
+           OR a.department LIKE %s
         ORDER BY a.appointment_time DESC
         LIMIT 10
         """,
@@ -187,8 +194,8 @@ def _query_appointments(state: dict, keyword: str) -> str:
     lines = []
     for r in rows:
         lines.append(
-            f"预约号{r['id']}：患者 {r.get('patient_name','?')}，科室 {r.get('department','')}"
-            f"，时间 {r.get('appointment_time')}，状态 {r.get('status','')}，事由 {r.get('reason','')}。"
+            f"预约号{r['id']}：患者 {r.get('patient_name', '?')}，科室 {r.get('department', '')}"
+            f"，时间 {r.get('appointment_time')}，状态 {r.get('status', '')}，事由 {r.get('reason', '')}。"
         )
     return "\n".join(lines)
 
@@ -252,21 +259,21 @@ def _query_patient_records(state: dict, keyword: str = "") -> str:
     for r in rows:
         dis = r.get("discharge_date") or "在院"
         lines.append(
-            f"住院号{r['id']}：科室 {r.get('department','')}，诊断 {r.get('diagnosis','')}，"
+            f"住院号{r['id']}：科室 {r.get('department', '')}，诊断 {r.get('diagnosis', '')}，"
             f"入院 {r.get('admit_date')}，出院 {dis}。"
         )
     return "病历汇总：\n" + "\n".join(lines)
 
 
 def _create_appointment(
-    state: dict,
-    department: str,
-    date: str,
-    time_slot: str,
-    doctor_id: int = None,
-    symptom: str = "",
-    patient_name: str = "",
-    patient_id: int = None,
+        state: dict,
+        department: str,
+        date: str,
+        time_slot: str,
+        doctor_id: int = None,
+        symptom: str = "",
+        patient_name: str = "",
+        patient_id: int = None,
 ) -> str:
     """提交预约挂号请求（写操作，需医生复核后才生效）。
 
@@ -317,6 +324,45 @@ def _create_appointment(
         f"已生成预约请求 #{req_id}（科室：{department}，日期：{date}，时段：{time_slot}），"
         f"已提交医生复核，待批准后正式生效。请勿重复提交。"
     )
+
+
+def _query_schedules(state: dict, department: str = "", doctor_id: int = None, date: str = "") -> str:
+    """查询医生排班信息，获取指定科室/日期/医生的可用时段。"""
+    conditions = []
+    params = []
+    if department:
+        conditions.append("s.department LIKE %s")
+        params.append(f"%{department}%")
+    if doctor_id:
+        conditions.append("s.doctor_id = %s")
+        params.append(doctor_id)
+    if date:
+        conditions.append("s.schedule_date = %s")
+        params.append(date)
+
+    where = " AND ".join(conditions) if conditions else "1=1"
+    rows = fetchall(
+        f"""
+        SELECT s.id, s.department, s.doctor_id, s.schedule_date,
+               s.time_slot, s.status, u.name AS doctor_name
+        FROM schedules s
+        LEFT JOIN users u ON s.doctor_id = u.id
+        WHERE {where}
+        ORDER BY s.schedule_date, s.time_slot
+        LIMIT 20
+        """,
+        tuple(params),
+    )
+    if not rows:
+        return f"未查询到符合条件的排班信息。"
+    lines = []
+    for r in rows:
+        lines.append(
+            f"排班{r['id']}：科室 {r.get('department', '')}，医生 {r.get('doctor_name', '?')}"
+            f"，日期 {r.get('schedule_date', '')}，时段 {r.get('time_slot', '')}"
+            f"，状态 {r.get('status', '')}。"
+        )
+    return "排班信息：\n" + "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +462,20 @@ TOOLS: list[Tool] = [
             "required": [],
         },
         func=_query_patient_records,
+    ),
+    Tool(
+        name="query_schedules",
+        description="查询医生排班信息，获取指定科室/日期/医生的可用时段，用于预约管理。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "department": {"type": "string", "description": "科室名"},
+                "doctor_id": {"type": "integer", "description": "医生ID"},
+                "date": {"type": "string", "description": "日期，如 2026-09-01"},
+            },
+            "required": [],
+        },
+        func=_query_schedules,
     ),
     Tool(
         name="create_appointment",

@@ -156,11 +156,23 @@ def chat_stream_sse(
 
 
 def get_chat_history(user_id: int, limit: int = 50) -> list[dict]:
-    """获取用户的全部问答历史。"""
+    """获取用户的全部问答历史（含引用文档）。"""
     rows = fetchall(
         "SELECT m.*, c.user_id, c.title AS conv_title "
         "FROM messages m JOIN conversations c ON m.conversation_id = c.id "
         "WHERE c.user_id = %s ORDER BY m.id DESC LIMIT %s",
         (user_id, limit)
     )
+    # 为每条消息关联引用文档
+    for row in rows:
+        msg_id = row.get('id')
+        if msg_id:
+            cites = fetchall(
+                "SELECT document_id AS doc_id, chunk_index, source_text, title, similarity "
+                "FROM citations WHERE message_id = %s ORDER BY similarity DESC",
+                (msg_id,)
+            )
+            row['citations'] = cites
+        else:
+            row['citations'] = []
     return rows

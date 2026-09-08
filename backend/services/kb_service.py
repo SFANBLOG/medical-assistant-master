@@ -1,11 +1,12 @@
 """
 知识库服务：知识库 CRUD、文档上传/切分/向量化/检索。
 """
-import os
 import shutil
-from pathlib import Path
 
 from backend import config
+from backend.rag.chunker import chunk_document
+from backend.rag.embedder import get_embedder
+from backend.rag.vectorstore import get_vectorstore, VectorRecord
 from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
 from backend.utils.file_parser import (
     parse_file,
@@ -15,9 +16,6 @@ from backend.utils.file_parser import (
     is_allowed,
     get_ext,
 )
-from backend.rag.chunker import chunk_document
-from backend.rag.embedder import get_embedder
-from backend.rag.vectorstore import get_vectorstore, VectorRecord
 
 
 def list_knowledge_bases(role: str, user_id: int, page: int = 1, size: int = 20) -> dict:
@@ -128,11 +126,11 @@ def _extract_document_text(path: str, file_type: str) -> str:
 
 
 def upload_document(
-    kb_id: int,
-    file_path: str,
-    filename: str,
-    visibility: str,
-    content_bytes: bytes = None,
+        kb_id: int,
+        file_path: str,
+        filename: str,
+        visibility: str,
+        content_bytes: bytes = None,
 ) -> dict:
     """
     上传文档到知识库。
@@ -199,6 +197,7 @@ def upload_document(
     doc = fetchone("SELECT id FROM documents WHERE file_path = %s ORDER BY id DESC LIMIT 1", (rel_path,))
 
     # 写入向量：每条 chunk 关联到 doc_id
+    vs = get_vectorstore()
     records = [
         VectorRecord(
             id=f"doc{doc['id']}_chunk{chunk.index}",
@@ -230,6 +229,77 @@ def list_documents(kb_id: int, page: int = 1, size: int = 20) -> dict:
         (kb_id, size, offset)
     )
     return {"total": total, "list": rows, "page": page, "size": size}
+
+
+def upload_documents_batch(
+        kb_id: int,
+        files,
+        visibility: str,
+        uploader_id: int = None,
+        uploader_role: str = None,
+) -> dict:
+    """批量上传文档到知识库。
+
+    - 每个文件独立处理，单个失败不阻塞其它文件
+    - files: Flask FileStorage 列表（request.files.getlist("files")）
+    - 返回结构：
+        {
+          "results": [
+            {"filename": str, "ok": bool,
+             "doc_id"?: int, "chunk_count"?: int, "status"?: str,
+             "error"?: str},
+            ...
+          ],
+          "summary": {"total": N, "success": S, "failed": F}
+        }
+    """
+    # 一次 404 检测，避免每个文件都重复查
+    kb = fetchone("SELECT * FROM knowledge_bases WHERE id = %s", (kb_id,))
+    if not kb:
+        return {
+            "results": [{"filename": f.filename or "?", "ok": False, "error": "知识库不存在"}
+                        for f in files],
+            "summary": {"total": len(files), "success": 0, "failed": len(files)},
+        }
+
+    results = []
+    success = failed = 0
+    for f in files:
+        filename = f.filename or "(未命名)"
+        try:
+            content_bytes = f.read()
+            r = upload_document(
+                kb_id=kb_id,
+                file_path=filename,
+                filename=filename,
+                visibility=visibility,
+                content_bytes=content_bytes,
+            )
+            if "error" in r:
+                results.append({"filename": filename, "ok": False, "error": r["error"]})
+                failed += 1
+            else:
+                results.append({
+                    "filename": filename,
+                    "ok": True,
+                    "doc_id": r["doc_id"],
+                    "chunk_count": r["chunk_count"],
+                    "status": r["status"],
+                })
+                success += 1
+        except Exception as e:  # noqa: BLE001
+            # 单文件异常不阻断其它
+            results.append({
+                "filename": filename,
+                "ok": False,
+                "error": f"上传异常: {type(e).__name__}: {str(e)[:200]}",
+            })
+            failed += 1
+
+    return {
+        "results": results,
+        "summary": {"total": len(files), "success": success, "failed": failed},
+    }
 
 
 def delete_document(doc_id: int) -> bool:

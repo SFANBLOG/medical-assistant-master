@@ -33,8 +33,8 @@
         <div class="header-right">
           <el-dropdown @command="handleCommand">
             <span class="user-info">
-              <el-avatar :size="30" class="user-avatar">
-                <el-icon><UserFilled /></el-icon>
+              <el-avatar :size="30" :class="['user-avatar', `role-${auth.role}`]">
+                <el-icon><component :is="roleIcon" /></el-icon>
               </el-avatar>
               <span class="user-name">{{ auth.user?.display_name || auth.user?.username }}</span>
               <el-tag size="small" :class="roleTagClass">{{ auth.roleLabel }}</el-tag>
@@ -66,6 +66,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { UserFilled, FirstAidKit, User, Setting } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import SideMenu from './SideMenu.vue'
 
@@ -75,6 +76,17 @@ const router = useRouter()
 
 const isMobile = ref(false)
 const drawerVisible = ref(false)
+
+// 角色 → 图标映射（使用 Element Plus 实际存在的图标）
+const ROLE_ICONS: Record<string, any> = {
+  patient: UserFilled,   // 患者：实心人形
+  doctor: UserFilled,    // 医生：实心人形（用颜色区分）
+  nurse: FirstAidKit,    // 护士：急救箱
+  public: User,          // 群众：空心人形
+  admin: Setting,        // 管理员：设置
+}
+
+const roleIcon = computed(() => ROLE_ICONS[auth.role] || UserFilled)
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 992
@@ -164,6 +176,23 @@ async function handleCommand(cmd: string) {
 .user-avatar {
   background: var(--el-color-primary);
   color: #fff;
+}
+
+/* 角色头像颜色 */
+.user-avatar.role-patient {
+  background: #409eff;  /* 患者：蓝色 */
+}
+.user-avatar.role-doctor {
+  background: #67c23a;  /* 医生：绿色 */
+}
+.user-avatar.role-nurse {
+  background: #e6a23c;  /* 护士：橙色 */
+}
+.user-avatar.role-public {
+  background: #909399;  /* 群众：灰色 */
+}
+.user-avatar.role-admin {
+  background: #9c27b0;  /* 管理员：紫色 */
 }
 
 .user-name {

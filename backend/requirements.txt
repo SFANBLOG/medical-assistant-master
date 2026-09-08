@@ -20,6 +20,11 @@ PyPDF2>=3.0.0
 # slim 镜像里会直接 ImportError。缺库时 file_parser 会给出明确提示，不影响其它格式。
 werkzeug>=3.0.0
 gunicorn>=21.2.0
-pymilvus>=2.3.0,<2.4.0
-# pymilvus 2.3.x 依赖 environs/marshmallow，须锁定 marshmallow<4（4.x 移除了 __version_info__ 导致 import 失败）
+# 注意：本项目的 MilvusStore 使用 PyMilvus 3.x 的 MilvusClient 高级 API
+# （create_collection(schema=...)/flush(collection_name=...)/search 返回 List[List[dict]] 等），
+# 与开发环境 pymilvus 3.0.1 实测一致。请勿改回 2.x：
+# 2.3.x 的 MilvusClient 无 flush 方法、2.4+/2.5 的 flush 形参为 collection_names(列表)，
+# 都会导致播种向量无法落盘（row_count=0）或启动报错。
+pymilvus>=3.0.1,<3.1.0
+# pymilvus 依赖 environs/marshmallow，须锁定 marshmallow<4（4.x 移除了 __version_info__ 导致 import 失败）
 marshmallow<4.0.0

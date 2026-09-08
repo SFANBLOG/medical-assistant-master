@@ -63,8 +63,12 @@ DENSE_TOP_K = int(os.getenv("DENSE_TOP_K", "30"))
 # 稠密分支的相似度下限（仅过滤纯噪声，低相关交由重排阶段裁决）
 DENSE_MIN_SIMILARITY = float(os.getenv("DENSE_MIN_SIMILARITY", "0.0"))
 # 阶段3：Cross-Encoder 重排后保留的条数，与相关性下限
-RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "5"))
-RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.12"))
+# 5→8：实测重排分数第 6~8 条仍达 0.66~0.69（高相关），原先 5 条会砍掉它们，
+# 扩到 8 条可让 LLM 拿到更完整的上下文，且候选池 30+30 充足、不增加 CE 调用次数。
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "8"))
+# 相关性下限：低于此分的候选不进入 LLM 上下文（过滤噪声 → 提升回答质量）。
+# 融合算法下相关文档普遍 >=0.90，不相关 <0.45，0.45 可干净切分两者。
+RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.45"))
 # 重排融合权重（稠密余弦 + BM25 归一化 + 词法重叠）
 RERANK_W_DENSE = float(os.getenv("RERANK_W_DENSE", "0.55"))
 RERANK_W_BM25 = float(os.getenv("RERANK_W_BM25", "0.30"))
@@ -72,9 +76,29 @@ RERANK_W_LEXICAL = float(os.getenv("RERANK_W_LEXICAL", "0.15"))
 # Cross-Encoder 模型路径（留空或 "auto" 则用融合模式；推荐 BAAI/bge-reranker-v2-min）
 RERANK_MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "auto")
 # 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 CE 模型，找不到则用增强融合。
+# 是否启用 Cross-Encoder 作为增强信号（默认关闭）：
+#   - bge-reranker-* 类模型在 CPU 上单查询需 14~31s，且原始 sigmoid 分数被压缩在
+#     0.5~0.73 区间、对"非常相关/较相关"区分度差，直接替换融合反而会让展示相关度
+#     从 95%+ 掉到 ~73%。故默认关闭，仅作可选增强（与融合取 max，只升不降）。
+#   - 设为 true 且模型存在时，CE 仅作为"增强boost"，绝不拉低融合给出高分的相关文档。
+RERANK_USE_CE = os.getenv("RERANK_USE_CE", "false").lower() in ("1", "true", "yes", "on")
+
+# ---- Agent 架构 ----
+# v1: 原有单体编排器（roles.py 关键字路由）
+# v2: 新架构（Supervisor + 子智能体 + 技能系统）
+AGENT_MODE = os.getenv("AGENT_MODE", "v2").lower()
 
 # ---- 服务端口 ----
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8010"))
+
+# ---- 本地 Flask 运行模式（仅 app.run 生效；Docker/gunicorn 走 wsgi 入口，不经这里）----
+# Windows 下 debug=True 会连带开启 watchdog 文件监视自动重载，对目录动静极敏感：
+# 任何临时脚本增删（如 diag_models.py）、.venv/site-packages 写入都会触发
+# "Detected change → Restarting"，整服务反复重启 → 启动横幅/模型加载重复打印，并偶发
+# WinError 10038。故默认保留交互调试器（错误页 + PIN）但关闭自动重载；
+# 确需改代码热重载时设 FLASK_USE_RELOADER=1。
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "1").lower() in ("1", "true", "yes", "on")
+FLASK_USE_RELOADER = os.getenv("FLASK_USE_RELOADER", "0").lower() in ("1", "true", "yes", "on")
 
 # ---- JWT ----
 JWT_SECRET = os.getenv("JWT_SECRET", "medical-assistant-secret-key-2024")

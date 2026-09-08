@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>医智助手 Agent 评测覆盖率报表</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f7fa; color: #303133; margin: 0; padding: 32px; }
+  .card { max-width: 760px; margin: 0 auto; background: #fff; border-radius: 14px;
+           box-shadow: 0 2px 12px rgba(0,0,0,.06); padding: 28px 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px 8px; border-bottom: 1px solid #ebeef5; text-align: left; }
+  th { color: #909399; font-weight: 600; font-size: 12px; }
+  td.num { text-align: center; font-variant-numeric: tabular-nums; }
+  .bar { background: #ecf0f3; border-radius: 6px; height: 10px; overflow: hidden; min-width: 120px; }
+  .fill { height: 100%; background: linear-gradient(90deg,#409eff,#67c23a); border-radius: 6px; }
+  .overall { margin-top: 22px; display: flex; align-items: baseline; gap: 10px; }
+  .overall .big { font-size: 38px; font-weight: 700; color: #27ae60; font-variant-numeric: tabular-nums; }
+  .overall .lbl { color: #606266; font-size: 14px; }
+  .cases { margin-top: 18px; font-size: 12px; color: #909399; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>医智助手 Agent · 评测覆盖率报表</h1>
+    <div class="sub">生成时间：2026-09-06 16:18:23 ｜ 离线评测（不依赖 API / Milvus / 真实库）</div>
+    <table>
+      <thead><tr><th>维度</th><th>覆盖</th><th>覆盖率</th><th>进度</th></tr></thead>
+      <tbody>
+        <tr>
+      <td>安全护栏触发率</td>
+      <td class="num">2/2</td>
+      <td class="num">100.0%</td>
+      <td><div class="bar"><div class="fill" style="width:100.0%"></div></div></td>
+    </tr>
+<tr>
+      <td>角色路由准确率</td>
+      <td class="num">3/3</td>
+      <td class="num">100.0%</td>
+      <td><div class="bar"><div class="fill" style="width:100.0%"></div></div></td>
+    </tr>
+<tr>
+      <td>引用覆盖率</td>
+      <td class="num">4/4</td>
+      <td class="num">100.0%</td>
+      <td><div class="bar"><div class="fill" style="width:100.0%"></div></div></td>
+    </tr>
+<tr>
+      <td>写操作 HITL 门控</td>
+      <td class="num">2/2</td>
+      <td class="num">100.0%</td>
+      <td><div class="bar"><div class="fill" style="width:100.0%"></div></div></td>
+    </tr>
+<tr>
+      <td>工具调用意图覆盖</td>
+      <td class="num">6/6</td>
+      <td class="num">100.0%</td>
+      <td><div class="bar"><div class="fill" style="width:100.0%"></div></div></td>
+    </tr>
+      </tbody>
+    </table>
+    <div class="overall">
+      <span class="big">100.0%</span>
+      <span class="lbl">总覆盖率（17/17）</span>
+    </div>
+    <div class="cases">用例总数 8，通过 8。详见 coverage_report.json。</div>
+  </div>
+</body>
+</html>

@@ -18,6 +18,7 @@ from backend.routes.medical_bp import medical_bp
 from backend.routes.dashboard_bp import dashboard_bp
 from backend.routes.agent_bp import agent_bp
 from backend.routes.review_bp import review_bp
+from backend.mcp.server import mcp_bp
 from backend.utils.errors import register_error_handlers
 
 
@@ -37,6 +38,7 @@ def create_app() -> Flask:
     app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
     app.register_blueprint(agent_bp, url_prefix="/api/agent")
     app.register_blueprint(review_bp, url_prefix="/api/review")
+    app.register_blueprint(mcp_bp, url_prefix="/api")
 
     # 统一错误处理（APIError / 404 / 405 / 未捕获异常）
     register_error_handlers(app)
@@ -97,7 +99,15 @@ def init_database():
 
     try:
         import threading
-        threading.Thread(target=_warmup_vectorstore, daemon=True).start()
+        t = threading.Thread(target=_warmup_vectorstore, daemon=True)
+        t.start()
+        # 关键修复（gunicorn --preload + SSE 检索挂起）：
+        # master 必须等向量库预热完成后再 fork worker。若 fork 发生时 warmup
+        # 线程仍在加载 BGE 模型 / 建立 Milvus 连接，worker 会继承半初始化的
+        # torch 线程池状态，首个 SSE 请求在 embedder.encode 处挂起（90s+ 无响应）。
+        # join 后所有单例在 fork 前完全就绪，worker 内共享只读模型、post_fork
+        # 各自重建 Milvus 连接，均安全。
+        t.join(timeout=180)
     except Exception:
         _warmup_vectorstore()
 
@@ -105,10 +115,15 @@ def init_database():
 def main():
     init_database()
     app = create_app()
+    # 本地启动：保留交互调试器（debug=True 由 FLASK_DEBUG 控制），但默认关闭
+    # watchdog 自动重载（use_reloader=False）——Windows 下文件监视会把目录里任何动静
+    # （临时脚本增删、.venv 写入）当成代码变更，反复重启导致启动横幅与模型加载重复输出。
+    # 确需热重载：FLASK_USE_RELOADER=1。生产（Docker/gunicorn）不经过 app.run。
     app.run(
         host="0.0.0.0",
         port=config.BACKEND_PORT,
-        debug=True,
+        debug=config.FLASK_DEBUG,
+        use_reloader=config.FLASK_USE_RELOADER,
         threaded=True,
     )
 

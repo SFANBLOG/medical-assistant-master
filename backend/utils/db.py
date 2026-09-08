@@ -5,6 +5,7 @@
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Optional
 
@@ -21,12 +22,26 @@ except ImportError:
 _lock = threading.Lock()
 _db_checked = False  # 是否已确认目标数据库存在（避免每次连接重复 CREATE DATABASE）
 
+def _mysql_connect_retry(**kwargs):
+    """带退避重试的 MySQL 连接：容器场景下 MySQL 健康探针通过到真正接受连接之间
+    常有一个短暂窗口，首连可能报 Connection refused，重试几次即可，避免启动日志出现
+    非致命 traceback。"""
+    last_err = None
+    for attempt in range(10):
+        try:
+            return pymysql.connect(**kwargs)
+        except pymysql.OperationalError as e:
+            last_err = e
+            if attempt < 9:
+                time.sleep(1.5 * (attempt + 1))
+    raise last_err
+
 def _ensure_database():
     """确保目标数据库存在（仅执行一次，后续复用）。"""
     global _db_checked
     if _db_checked:
         return
-    admin_conn = pymysql.connect(
+    admin_conn = _mysql_connect_retry(
         host=MYSQL_HOST, port=MYSQL_PORT,
         user=MYSQL_USER, password=MYSQL_PASSWORD,
         charset="utf8mb4", autocommit=True,
@@ -47,7 +62,7 @@ def _get_mysql_conn():
     _ensure_database()
 
     # 连接目标库
-    return pymysql.connect(
+    return _mysql_connect_retry(
         host=MYSQL_HOST, port=MYSQL_PORT,
         user=MYSQL_USER, password=MYSQL_PASSWORD,
         database=DATABASE_NAME, charset="utf8mb4",

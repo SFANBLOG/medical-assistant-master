@@ -3,13 +3,13 @@
 
 运行: python seed.py
 """
+from pathlib import Path
+
 import os
+import random
 import sys
 import uuid
-import random
-from pathlib import Path
 from datetime import datetime, timedelta
-
 from werkzeug.security import generate_password_hash
 
 # 确保 backend 目录在 path 中
@@ -18,7 +18,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backend import config
 from backend.utils.db import (
-    get_conn, execute, fetchone, fetchall, init_schema, DB_TYPE
+    execute, fetchone, fetchall, init_schema, DB_TYPE
 )
 from backend.rag.chunker import chunk_document
 from backend.rag.embedder import get_embedder
@@ -48,7 +48,7 @@ DEPARTMENTS = [
 ]
 
 DOCTOR_NAMES = ["张伟", "李芳", "王强", "刘洋", "陈静", "杨光", "赵敏", "黄磊",
-               "周杰", "吴婷", "徐明", "孙丽", "马超", "朱琳", "胡军", "郭艳"]
+                "周杰", "吴婷", "徐明", "孙丽", "马超", "朱琳", "胡军", "郭艳"]
 NURSE_NAMES = ["林雪", "何月", "高翔", "罗琳", "梁宇", "宋佳", "谢斌", "许晴"]
 PATIENT_NAMES = ["刘一", "陈二", "张三", "李四", "王五", "赵六", "钱七", "孙八",
                  "周一", "吴二", "郑三", "王四", "冯五", "蒋六", "韩七", "沈八",
@@ -83,7 +83,7 @@ def seed_users():
 
     # 更多医生
     for i, name in enumerate(DOCTOR_NAMES):
-        username = f"doctor{i+1:02d}"
+        username = f"doctor{i + 1:02d}"
         execute(
             f"INSERT INTO users (username, password_hash, role, display_name) VALUES ({ph}, {ph}, {ph}, {ph})",
             (username, PASSWORD_HASH, "doctor", f"{name}医生")
@@ -91,7 +91,7 @@ def seed_users():
 
     # 更多护士
     for i, name in enumerate(NURSE_NAMES):
-        username = f"nurse{i+1:02d}"
+        username = f"nurse{i + 1:02d}"
         execute(
             f"INSERT INTO users (username, password_hash, role, display_name) VALUES ({ph}, {ph}, {ph}, {ph})",
             (username, PASSWORD_HASH, "nurse", f"{name}护士")
@@ -99,7 +99,7 @@ def seed_users():
 
     # 更多患者
     for i, name in enumerate(PATIENT_NAMES):
-        username = f"patient{i+1:02d}"
+        username = f"patient{i + 1:02d}"
         execute(
             f"INSERT INTO users (username, password_hash, role, display_name) VALUES ({ph}, {ph}, {ph}, {ph})",
             (username, PASSWORD_HASH, "patient", f"{name}")
@@ -107,7 +107,7 @@ def seed_users():
 
     # 群众
     for i, name in enumerate(PUBLIC_NAMES):
-        username = f"public{i+1:02d}"
+        username = f"public{i + 1:02d}"
         execute(
             f"INSERT INTO users (username, password_hash, role, display_name) VALUES ({ph}, {ph}, {ph}, {ph})",
             (username, PASSWORD_HASH, "public", name)
@@ -214,9 +214,11 @@ def seed_documents_and_vectors():
                         continue
 
                     # 注册文档
+                    # review_status='approved'：播种文档为平台预置权威知识，默认可检索
+                    # （HITL 仅约束用户上传/AI 回答，不约束预置语料）。
                     execute(
-                        f"INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, chunk_count, status) "
-                        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'ready')",
+                        f"INSERT INTO documents (kb_id, filename, file_path, file_type, visibility, chunk_count, status, review_status) "
+                        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'ready', 'approved')",
                         (kb_id, doc_file.stem, rel_path, file_type, visibility, len(chunks))
                     )
 
@@ -243,7 +245,7 @@ def seed_documents_and_vectors():
                             embedding=emb.tolist(),
                         ))
 
-                    vs.insert_batch(records)
+                    vs.insert_batch(records, flush=False)
                     total_docs += 1
                     total_chunks += len(chunks)
                     if total_docs % 20 == 0:
@@ -251,6 +253,13 @@ def seed_documents_and_vectors():
                 except Exception as e:
                     print(f"    [ERROR] {rel_path}: {e}", flush=True)
                     continue
+
+    # 全部文档插入完成后统一 flush 一次，使向量可检索（避免逐条 flush 导致的极慢播种）
+    try:
+        vs.flush()
+        print("[Seed] 向量 flush 完成")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Seed] 向量 flush 失败（数据仍可能稍后自动落盘）: {e}", flush=True)
 
     print(f"[Seed] 文档注册完成: {total_docs} 篇, {total_chunks} 个 chunk")
 
@@ -290,7 +299,8 @@ def seed_conversations():
             f"INSERT INTO messages (conversation_id, role, content) VALUES ({ph}, {ph}, {ph})",
             (conv_id, "user", qa[0])
         )
-        msg_id = fetchone(f"SELECT id FROM messages WHERE conversation_id = {ph} ORDER BY id DESC LIMIT 1", (conv_id,))["id"]
+        msg_id = fetchone(f"SELECT id FROM messages WHERE conversation_id = {ph} ORDER BY id DESC LIMIT 1", (conv_id,))[
+            "id"]
         # assistant message
         execute(
             f"INSERT INTO messages (conversation_id, role, content) VALUES ({ph}, {ph}, {ph})",
@@ -336,7 +346,7 @@ def seed_hospitalizations():
             f"INSERT INTO hospitalizations (patient_id, admit_date, discharge_date, department, ward, bed_no, "
             f"diagnosis, doctor_id, status, total_cost) "
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (pid, admit, discharge, dept, f"{dept}病房", f"{random.randint(1,30):02d}床",
+            (pid, admit, discharge, dept, f"{dept}病房", f"{random.randint(1, 30):02d}床",
              diagnoses[i % len(diagnoses)], did, status, cost)
         )
 
@@ -454,7 +464,8 @@ def seed_nursing_records():
             content = random.choice(vitals_notes)
         else:
             content = "患者一般情况良好，继续目前治疗方案。"
-        recorded = (now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))).strftime("%Y-%m-%d %H:%M:%S")
+        recorded = (now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))).strftime(
+            "%Y-%m-%d %H:%M:%S")
 
         execute(
             f"INSERT INTO nursing_records (patient_id, nurse_id, record_type, content, recorded_at) "
@@ -499,9 +510,9 @@ def now_str():
 
 def seed_all():
     """执行全部播种。"""
-    import io
     # 将日志写到文件，避免 Windows 控制台编码导致崩溃
     logf = open(os.path.join(BASE_DIR, "seed_run.log"), "w", encoding="utf-8")
+
     def log(msg):
         try:
             logf.write(msg + "\n")

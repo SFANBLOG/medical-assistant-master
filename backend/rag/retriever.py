@@ -84,6 +84,10 @@ _MEDICAL_SYNONYMS: dict[str, list[str]] = {
     "过敏": ["变态反应", "过敏性", "敏感", "过敏反应", "荨麻疹"],
     "疫苗": ["疫苗接种", "预防针", "免疫接种"],
 
+    # === 消化系统/溃疡 ===
+    "消化性溃疡": ["胃溃疡", "十二指肠溃疡", "肠胃溃疡", "消化性溃疡病"],
+    "胃溃疡": ["消化性溃疡", "十二指肠溃疡", "胃黏膜溃疡"],
+
     # === 感染 ===
     "细菌": ["细菌感染", "革兰阳性菌", "革兰阴性菌"],
     "病毒": ["病毒感染", "呼吸道病毒", "肠道病毒"],
@@ -123,6 +127,7 @@ def _expand_query(query: str) -> str:
         "咳嗽": "symptom", "肺炎": "symptom", "腹泻": "symptom", "疼痛": "symptom",
         "头痛": "symptom", "皮疹": "symptom", "惊厥": "symptom", "呕吐": "symptom",
         "过敏": "symptom", "感染": "symptom", "休克": "symptom", "脱水": "symptom",
+        "消化性溃疡": "symptom", "胃溃疡": "symptom",
         "儿童": "population", "小儿": "population", "婴儿": "population",
         "成人": "population", "老人": "population",
         "就医": "action", "就诊": "action", "治疗": "action", "预防": "action",

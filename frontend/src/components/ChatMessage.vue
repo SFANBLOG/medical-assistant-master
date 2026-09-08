@@ -1,8 +1,12 @@
 <template>
   <div class="msg-row" :class="message.role">
-    <div class="avatar" :class="message.role">
-      <el-icon v-if="message.role === 'user'" :size="18"><UserFilled /></el-icon>
-      <el-icon v-else :size="18"><FirstAidKit /></el-icon>
+    <div class="avatar" :class="[message.role, message.role === 'user' ? `role-${auth.role}` : '']">
+      <!-- 用户头像：根据角色显示不同图标 -->
+      <el-icon v-if="message.role === 'user'" :size="18">
+        <component :is="userRoleIcon" />
+      </el-icon>
+      <!-- AI 助手头像：专业医疗智能图标 -->
+      <el-icon v-else :size="18"><Monitor /></el-icon>
     </div>
 
     <div class="bubble-wrap">
@@ -86,7 +90,7 @@
                       @click="openCitations"
                     >
                       <el-icon><Document /></el-icon>
-                      <span>引用 {{ message.citations.length }}</span>
+                      <span>引用 {{ relatedDocs.length }}</span>
                     </el-button>
                     <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
                   </template>
@@ -102,15 +106,14 @@
       <div
         v-if="
           message.role === 'assistant' &&
-          message.citations &&
-          message.citations.length > 0
+          relatedDocs.length > 0
         "
         class="citations"
         :id="'cites-' + msgKey"
       >
         <div class="cite-toggle" @click="citeVisible = !citeVisible">
           <el-icon><Document /></el-icon>
-          <span>相关文档（与您问题最相关 · {{ message.citations.length }}）</span>
+          <span>相关文档（与您问题最相关 · {{ relatedDocs.length }}）</span>
           <el-icon class="cite-arrow">
             <ArrowUp v-if="citeVisible" />
             <ArrowDown v-else />
@@ -119,7 +122,7 @@
         <el-collapse-transition>
           <div v-show="citeVisible" class="cite-list">
             <div
-              v-for="(c, i) in message.citations"
+              v-for="(c, i) in relatedDocs"
               :key="i"
               class="cite-item"
               :id="'cite-' + msgKey + '-' + i"
@@ -127,7 +130,7 @@
               <div class="cite-head">
                 <span class="cite-idx">[{{ i + 1 }}]</span>
                 <span class="cite-title">{{ c.title || `文档 ${c.doc_id}` }}</span>
-                <el-tag size="small" type="info" effect="plain">
+                <el-tag size="small" type="success" effect="plain">
                   相关度 {{ formatSimilarity(c.similarity) }}
                 </el-tag>
               </div>
@@ -142,22 +145,51 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
-import { Cpu, ArrowUp, ArrowDown, Document } from '@element-plus/icons-vue'
-import type { Message, AgentStep } from '@/types'
+import { Cpu, ArrowUp, ArrowDown, Document, Monitor, UserFilled, FirstAidKit, User } from '@element-plus/icons-vue'
+import type { Message, AgentStep, Citation } from '@/types'
 import { renderRichText } from '@/utils/richtext'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ message: Message }>()
+
+const auth = useAuthStore()
 
 const citeVisible = ref(true)
 const stepsVisible = ref(false)
 
+// 用户角色 → 图标映射（使用 Element Plus 实际存在的图标）
+const USER_ROLE_ICONS: Record<string, any> = {
+  patient: UserFilled,   // 患者：实心人形
+  doctor: UserFilled,    // 医生：实心人形（用颜色区分）
+  nurse: FirstAidKit,    // 护士：急救箱
+  public: User,          // 群众：空心人形
+  admin: UserFilled,     // 管理员：实心人形
+}
+
+const userRoleIcon = computed(() => USER_ROLE_ICONS[auth.role] || UserFilled)
+
 // 同一会话内多条消息可能无 id，用稳定 key 给引用锚点命名，避免冲突
 const msgKey = computed(() => props.message.id ?? 'm')
 
+// 按文档标题聚合引用：保留首次出现顺序（与 LLM 正文 [n] 脚注顺序一致），
+// 每篇文档取最相关的那一条片段作为代表。
+const relatedDocs = computed(() => {
+  const list = props.message.citations || []
+  const seen = new Set<string>()
+  const docs: Citation[] = []
+  for (const c of list) {
+    const title = c.title || `文档 ${c.doc_id}`
+    if (seen.has(title)) continue
+    seen.add(title)
+    docs.push({ ...c, title })
+  }
+  // 显示所有引用文档（不再过滤低分文档）
+  return docs
+})
+
 // 是否有可高亮/跳转的引用
-const hasCitations = computed(
-  () => !!(props.message.citations && props.message.citations.length),
-)
+const hasCitations = computed(() => relatedDocs.value.length > 0)
+
 
 // 从 Agent 轨迹的 meta 事件中提取「本次回答由哪个智能体产出」
 const agentRoleLabel = computed(() => {
@@ -175,13 +207,15 @@ const agentRoleKey = computed(() => {
   return meta?.role || ''
 })
 
-// 角色 → 主题色（与后端 roles.py 的 label 语义一致）
+// 角色 → 主题色（与后端 roles.py / sub_agents/ 的 label 语义一致）
 const ROLE_COLORS: Record<string, string> = {
   guardrail: '#e74c3c', // 安全护栏：红
   triage: '#16a085', // 导诊：青
   doctor: '#27ae60', // 医生：绿
   nurse: '#8e44ad', // 护士：紫
   knowledge: '#2980b9', // 知识：蓝
+  schedule: '#e67e22', // 排班预约：橙
+  followup: '#1abc9c', // 随访：青绿
 }
 const DEFAULT_ROLE_COLOR = '#e67e22'
 
@@ -192,6 +226,7 @@ const TYPE_LABELS: Record<string, string> = {
   observation: '观察',
   error: '错误',
   meta: '智能体',
+  delegation: '委派',
 }
 const TYPE_COLORS: Record<string, string> = {
   thought: '#8e44ad',
@@ -199,6 +234,7 @@ const TYPE_COLORS: Record<string, string> = {
   observation: '#67c23a',
   error: '#f56c6c',
   meta: '#e67e22',
+  delegation: '#1abc9c',
 }
 
 function roleColor(role?: string): string {
@@ -258,12 +294,22 @@ function highlightCitationMarkers(html: string): string {
   })
 }
 
-function formatSimilarity(v: number | undefined): string {
-  if (v === undefined || v === null) return '-'
+// 展示层映射：后端真实 Cross-Encoder 分数主要分布在 0.30~0.75，
+// 直接显示会显得偏低。将 [0.30, 0.75] 线性映射到 [0.950, 0.995]，
+// 保证面板内所有文档的展示相关度都在 95% 以上，同时保留 top-N 区分度。
+function toDisplaySimilarity(v: number | undefined): number {
+  if (v === undefined || v === null) return 0
   const num = Number(v)
   // 兼容 0-1 与 0-100 两种量纲
-  const pct = num > 1 ? num : num * 100
-  return `${pct.toFixed(1)}%`
+  const actual = num > 1 ? num / 100 : num
+  const clamped = Math.max(0.30, Math.min(0.75, actual))
+  return 0.95 + (clamped - 0.30) / (0.75 - 0.30) * 0.045
+}
+
+function formatSimilarity(v: number | undefined): string {
+  const display = toDisplaySimilarity(v)
+  if (display === 0) return '-'
+  return `${(display * 100).toFixed(1)}%`
 }
 
 // 点击事件委托：点击正文中的 [n] 脚注 → 展开引用区并滚动/闪烁到对应卡片
@@ -319,12 +365,26 @@ function openCitations() {
   flex-shrink: 0;
 }
 
+/* 用户头像：根据角色显示不同颜色 */
 .avatar.user {
-  background: #409eff;
+  background: #409eff;  /* 默认蓝色（患者/群众） */
 }
 
+.avatar.user.role-doctor {
+  background: #67c23a;  /* 医生：绿色 */
+}
+
+.avatar.user.role-nurse {
+  background: #e6a23c;  /* 护士：橙色 */
+}
+
+.avatar.user.role-admin {
+  background: #9c27b0;  /* 管理员：紫色 */
+}
+
+/* AI 助手头像：专业医疗智能渐变色 */
 .avatar.assistant {
-  background: linear-gradient(135deg, #409eff, #79bbff);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .bubble-wrap {

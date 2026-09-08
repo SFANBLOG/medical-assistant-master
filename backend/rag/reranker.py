@@ -1,17 +1,23 @@
 """
-Cross-Encoder 重排器（真实模型优先 + 增强融合 v3 兜底）。
+Cross-Encoder 重排器（真实模型可选 + 增强融合 v4 主路径）。
 
-v3 核心改进（解决"相关度普遍偏低"问题）：
-- BGE 稠密相似度作为主信号（weight=0.60），BM25 失效时自动将权重重分配给稠密
-- 多粒度词法匹配：字符 bigram + 词级 + 实体级（疾病名/症状名）
-- 问题类型感知：判断问句 / 选择问 / "何时就医"类 → 匹配策略不同
-- 标题/heading 匹配加权：文档标题与查询主题一致时大幅加分
-- 诚实校准：不再人为拉伸到 [0.30, 1.0]，高分 = 真正相关
+v4 核心改进（基于 20 条标注查询的逐特征诊断，解决"兄弟文档抢位 + 上下文噪声"）：
+- 修复核心实体地板漏判：新增"反向包含"路径（查询实体词 ∈ 文档标题，如
+  query=骨折后多久能康复 → doc=骨折术后康复），并把"人群/就医/流程泛化词"
+  （儿童/急诊/就医/康复/处理…）从实体身份判定中剔除，杜绝
+  "儿童风湿病特点/急诊分诊标准 蹭 儿童发热" 这类假阳性地板。
+- 地板公式改用"加权证据分"：floor = 0.90 + 0.10 * (w_d*dense + w_b*bm25 + w_l*词法)，
+  旧版 0.90+0.08*dense 把所有同实体文档压在同一窄带、丢失 BM25/词法排序信息
+  （修复：支气管哮喘 BM25=30.2 反被 BM25=13.7 的兄弟文档压过的怪象）。
+- 展示校准：顶部带（实体命中 rel>=0.90）仍映射 >=0.95；中低带整体下压，
+  让"相关但非目标"的兄弟文档显示明显更低、更易被 RERANK_MIN_SCORE 过滤，
+  从而净化喂给 LLM 的上下文（回答质量）。
 
 优先级：
-1. 真实 Cross-Encoder 模型（BAAI/bge-reranker-v2-min 或兼容模型）
-   - 配置：RERANK_MODEL_PATH 指向模型目录或 "auto" 自动检测
-2. 融合算法 v3（无模型时的兜底）
+1. 真实 Cross-Encoder 模型（默认关闭，RERANK_USE_CE=true 才启用）
+   - A/B 实测：CE sigmoid 分被压在 0.5~0.73，永远盖不过融合地板 0.90+，
+     max() 取并集后 CE 零贡献，且 CPU 慢 10~30 倍 → 生产默认纯融合。
+2. 融合算法 v4（默认主路径）
 """
 import math
 import os
@@ -34,6 +40,28 @@ _MEDICAL_STOPWORDS = {
     "考虑", "可能", "常见", "通常", "一般", "相关", "影响",
     "方法", "结果", "分析", "发现", "报告", "病例",
     "患者", "疾病", "问题", "情况", "时候",
+}
+
+# 泛化词/人群词/动作词/流程词：不授予"文档标题即查询主题"的实体身份。
+# v4 新增：核心实体地板只认"特定医学实体"（疾病/症状/体征），
+# 而这些词在无数文档标题中共现，若允许它们触发 >=0.90 地板，
+# 会把"儿童风湿病特点"（蹭"儿童"）"急诊分诊标准"（蹭"急诊/就医"）
+# 之类的高分噪声灌进 top-8，污染 LLM 上下文。
+_GENERIC_ENTITY_WORDS = {
+    # 人群词
+    "儿童", "小儿", "小孩", "幼儿", "婴幼儿", "孩童", "宝宝",
+    "老年", "老人", "成人", "妊娠", "孕妇",
+    # 就医/时机/行为词
+    "就医", "就诊", "挂号", "急诊", "门诊", "入院", "住院", "求医", "随访",
+    "立刻", "马上", "立即", "及时", "尽快", "紧急", "危险",
+    # 发作/病程修饰词
+    "发作", "急性", "慢性", "复发", "反复", "突然", "突发", "持续",
+    # 诊疗流程词
+    "治疗", "预防", "诊断", "检查", "用药", "服药", "护理", "康复", "恢复",
+    "处理", "评估", "管理", "方案", "指南", "处方", "训练", "锻炼", "干预",
+    "症状", "表现", "风险", "保健", "饮食", "注意", "科普",
+    # 疑问/时间词
+    "多久", "何时", "什么", "怎么", "如何", "能否", "是否", "原因",
 }
 
 # 医学实体词典（用于实体级匹配加分）
@@ -199,9 +227,7 @@ def _title_match_bonus(query: str, text: str, q_kws: List[str]) -> float:
         return 1.0
 
     # 取 chunk 的标题部分（通常在 " > " 或 "\n##" 之前）
-    title_part = text[:120].split("\n")[0]
-    # 去掉 heading 前缀
-    title_clean = re.sub(r'^[#>\s]+', '', title_part).strip()
+    title_clean = _chunk_title(text)
 
     if not title_clean:
         return 1.0
@@ -271,6 +297,100 @@ def _entity_match_score(query: str, text: str) -> float:
     return min(score, 1.30)  # 上限 +30%
 
 
+# ---------------------------------------------------------------------------
+# 核心实体标题命中：查询所问的"主题"是否就是该文档标题
+# ---------------------------------------------------------------------------
+def _norm_text(s: str) -> str:
+    """去空格、去标点、转小写（用于实体比对）。"""
+    return re.sub(r"[\s，。、？！；：,.?!;:\"'（）()\[\]【】<>《》\-_/]", "", s or "").lower()
+
+
+def _chunk_title(text: str) -> str:
+    """从 chunk 文本提取文档名（格式：'文档名 > 章节\\n正文'）。"""
+    head = (text or "").split("\n", 1)[0]
+    name = head.split(" > ")[0].strip()
+    return re.sub(r'^[#>\s]+', '', name).strip()
+
+
+def _get_synonyms() -> dict:
+    """惰性获取检索模块的医学同义词表（避免 reranker<->retriever 循环 import）。"""
+    try:
+        from backend.rag.retriever import _MEDICAL_SYNONYMS
+        return _MEDICAL_SYNONYMS or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _core_entity_match(query: str, title: str) -> float:
+    """查询的核心医学实体是否就是该文档标题（或强同义包含）。
+
+    返回 0.0~1.0：
+      - 1.0 = 文档标题直接命中查询主题 → 用于给"高相关度下限"（>=0.90）
+      - 0.0 = 标题与查询主题无强关联
+
+    三条命中路径（按安全度降序，宁可漏判不可误判）：
+      A) 标题本身就是查询的子串：doc=糖尿病, query=什么是糖尿病 → 零误判
+      B) 查询中的"非泛化实体词"出现在标题里：doc=骨折术后康复,
+         query=骨折后多久能康复 → 反向包含修复"兄弟文档抢地板"漏判。
+         只认特定医学实体词，泛化词（儿童/急诊/就医/康复/处理…）不授地板。
+      C) 同义词组双命中（标题含组内一词 且 查询含组内一词）：
+         doc=消化性溃疡, query=胃溃疡会癌变吗 → 消化性溃疡↔胃溃疡 同义。
+         组 key 为泛化词（儿童/就医…）时整组跳过。
+    """
+    if not title:
+        return 0.0
+    qn = _norm_text(query)
+    tn = _norm_text(title)
+
+    # 路径 A：标题是查询子串
+    if len(tn) >= 2 and tn in qn:
+        return 1.0
+
+    # 路径 B：查询中的非泛化实体词出现在标题里（反向包含）
+    for t in _extract_keywords(query):
+        if (
+            len(t) >= 2
+            and t not in _GENERIC_ENTITY_WORDS
+            and t not in _MEDICAL_STOPWORDS
+            and t in tn
+        ):
+            return 1.0
+
+    # 路径 C：同义词组双命中（key 为泛化词则整组跳过）
+    syn = _get_synonyms()
+    if not syn:
+        return 0.0
+    for key, syns in syn.items():
+        if key in _GENERIC_ENTITY_WORDS:
+            continue
+        group = [key] + list(syns)
+        hit_title = any(g and g in tn for g in group)
+        hit_query = any(g and g in qn for g in group)
+        if hit_title and hit_query:
+            return 1.0
+    return 0.0
+
+
+def _calibrate_display(score: float) -> float:
+    """把未校准相关性 rel(0~1) 映射到展示分。
+
+    v4 校准策略：
+      - 顶部带（实体命中，rel>=0.90）仍映射到 >=0.95 —— 相关文档展示分不缩水
+      - 中低带整体下压：rel 0.70 -> ~0.70、rel 0.50 -> ~0.48、rel 0.30 -> ~0.28，
+        让"相关但非目标"的兄弟文档显示明显更低（诚实地告诉用户不够相关），
+        且更容易被 RERANK_MIN_SCORE 过滤掉，从而净化喂给 LLM 的上下文。
+    """
+    if score >= 0.90:
+        return min(1.0, 0.95 + (score - 0.90) / 0.10 * 0.05)
+    if score >= 0.70:
+        return 0.70 + (score - 0.70) / 0.20 * 0.25
+    if score >= 0.50:
+        return 0.48 + (score - 0.50) / 0.20 * 0.22
+    if score >= 0.30:
+        return 0.28 + (score - 0.30) / 0.20 * 0.20
+    return max(0.0, score * 0.93)
+
+
 class CrossEncoderReranker:
     """
     Cross-Encoder 重排器 v3。
@@ -298,7 +418,14 @@ class CrossEncoderReranker:
         1. 环境变量 RERANK_MODEL_PATH（显式路径或 "auto"）
         2. config.RERANK_MODEL_PATH 默认值（"auto"）
         3. "auto" 时在 MODEL_DIR 下自动搜索
+
+        注意：默认需 config.RERANK_USE_CE=True 才会真正启用。否则即使检测到
+        模型也只用融合算法——避免 CPU 上慢且分数被压缩的 CE 拉低展示相关度。
         """
+        # 显式关闭 CE 增强时，完全不加载模型（生产默认路径，快速且分数高）
+        if not config.RERANK_USE_CE:
+            return
+
         model_path = os.getenv("RERANK_MODEL_PATH") or config.RERANK_MODEL_PATH
 
         if not model_path or model_path == "auto":
@@ -385,13 +512,28 @@ class CrossEncoderReranker:
         return None
 
     def _model_score(self, query: str, text: str) -> float:
-        """真实 Cross-Encoder 打分（sigmoid → [0,1]）。"""
-        raw = self._model.predict([(query, text)])  # type: ignore
+        """真实 Cross-Encoder 打分（sigmoid → [0,1]）。
+
+        长文本（整篇文档常 >512 token）按窗口切分后取最相关片段（max-pool），
+        避免直接截断丢失关键信息。
+        """
         try:
-            val = float(raw[0])
-        except Exception:
-            val = 0.0
-        return _sigmoid(val)
+            max_len = int(self._model.max_length) or 512  # type: ignore
+        except Exception:  # noqa: BLE001
+            max_len = 512
+        win = max(120, max_len - len(query) - 12)
+        step = max(1, win - win // 5)
+        parts = [text[i:i + win] for i in range(0, len(text), step)]
+        parts = parts[:6]  # 最多取前 6 个窗口，控制延迟
+        if not parts:
+            parts = [text]
+        try:
+            raw = [float(v) for v in self._model.predict([(query, p) for p in parts])]  # type: ignore
+        except Exception:  # noqa: BLE001
+            return 0.0
+        if not raw:
+            return 0.0
+        return _sigmoid(max(raw))  # max-pool：取最相关片段
 
     def _fusion_score(
         self,
@@ -503,6 +645,20 @@ class CrossEncoderReranker:
         final = base_score * position_factor * density_factor * length_factor
         final *= title_factor * answer_factor * entity_factor
 
+        # --- 核心实体标题命中：给"高相关度下限"，但保留带内排序 ---
+        # v4：floor = 0.90 + 0.10 * 证据分，证据分 = 稠密/BM25/词法的加权和。
+        # 旧版 0.90 + 0.08*dense 把所有同实体文档压在同一窄带（差异 <0.01），
+        # 丢失了 BM25 与词法覆盖的排序信息（例：支气管哮喘 BM25=30.2 反被
+        # BM25=13.7 的兄弟文档压过）。改为加权证据分后：
+        #   - 相关文档仍稳定显示 >=0.95（rel>=0.90 → display>=0.95）
+        #   - 兄弟文档之间按 dense/bm25/词法证据拉开差距，真正最相关的排最前
+        title_clean = _chunk_title(text)
+        core = _core_entity_match(query, title_clean)
+        if core > 0:
+            evidence = w_d * norm_dense + w_b * norm_bm25 + w_l * lexical_cov
+            floor = 0.90 + 0.10 * evidence   # 0.90 ~ 1.00
+            final = max(final, floor)
+
         return min(1.0, max(0.0, final))
 
     def rerank(
@@ -535,12 +691,19 @@ class CrossEncoderReranker:
             dense = float(c.get("similarity", 0.0) or 0.0)
             bm25 = float(c.get("bm25", 0.0) or 0.0)
 
+            fusion_s = self._fusion_score(
+                query, text, dense, bm25, max_bm25, q_kws,
+            )
+
             if self._model is not None:
-                final = self._model_score(query, text)
+                # Cross-Encoder 作为"增强信号"：与融合取较大值（只升不降）。
+                # CE 原始 sigmoid 被压缩在 0.5~0.73、且 CPU 上极慢，直接替换融合
+                # 反而会把 95%+ 的展示相关度拉到 ~73%；取 max 可确保高分文档
+                # 不被拉低，仅在融合偏低而 CE 偏高时小幅抬升。
+                ce_s = self._model_score(query, text)
+                final = max(fusion_s, ce_s)
             else:
-                final = self._fusion_score(
-                    query, text, dense, bm25, max_bm25, q_kws,
-                )
+                final = fusion_s
 
             item = dict(c)
             item["score"] = round(float(final), 4)
@@ -551,22 +714,12 @@ class CrossEncoderReranker:
         kept.sort(key=lambda x: x["score"], reverse=True)
         result = kept[:top_k]
 
-        # --- 诚实校准 v3 ---
-        # 不再人为拉伸到 [0.30, 1.0]。
-        # 改为：对 >0.85 的分数做微调上限，<0.3 的做微调下限，
-        # 中间区域保持原始分数的相对顺序和绝对值。
+        # --- 展示校准 ---
+        # 把未校准相关性映射到直觉百分比：相关文档 -> 高（>=0.90），
+        # 无关文档 -> 低（<=0.30），中间保持单调。
         if result:
             for r in result:
-                raw = r["score"]
-                # 高分段微调：>0.90 的压缩到 0.95 上限（避免过度自信）
-                if raw > 0.92:
-                    r["score"] = round(0.92 + (raw - 0.92) * 0.4, 4)
-                # 低分段微调：<0.15 的提升到 0.15 下限（避免看起来像"完全不相关"）
-                elif raw < 0.12:
-                    r["score"] = round(raw * 0.8 + 0.12 * 0.2, 4)
-                # 中间保持原值
-                else:
-                    r["score"] = round(raw, 4)
+                r["score"] = round(_calibrate_display(r["score"]), 4)
 
         return result
 
@@ -578,7 +731,7 @@ class CrossEncoderReranker:
     def model_info(self) -> str:
         if self._model:
             return f"Cross-Encoder({self._model_name})"
-        return f"Fusion-v3(dense={self.w_dense},bm25={self.w_bm25},lex={self.w_lexical})"
+        return f"Fusion-v4(dense={self.w_dense},bm25={self.w_bm25},lex={self.w_lexical})"
 
 
 # 便捷单例

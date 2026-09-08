@@ -2,7 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$/../../AILLM-Student/all-agent-study" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/../../What-to-eat-today-main" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../../project/agent-rag-customer-service" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../../医疗导诊助手" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../../财务智能问数Agent" vcs="Git" />
   </component>
 </project>

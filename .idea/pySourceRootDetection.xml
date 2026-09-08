@@ -4,6 +4,7 @@
     <option name="sourcePathsSet">
       <set>
         <option value="$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/backend" />
+        <option value="$PROJECT_DIR$/../../project/enterprise-rag-qa" />
       </set>
     </option>
   </component>

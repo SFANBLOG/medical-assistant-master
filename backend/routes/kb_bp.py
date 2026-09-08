@@ -89,6 +89,36 @@ def upload_document(kb_id):
     return jsonify(result)
 
 
+@kb_bp.route("/<int:kb_id>/documents/batch", methods=["POST"])
+@role_required("doctor", "admin")
+def upload_documents_batch(kb_id):
+    """批量上传文档（multipart/form-data，files 字段可重复出现）。
+
+    - 每个文件独立处理，单个失败不阻塞其它文件
+    - 单次请求总大小受 Flask MAX_CONTENT_LENGTH 限制（默认 64MB）
+    - 每文件最多 200 个，0 个文件返回 400
+    """
+    user = current_user()
+
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "未选择任何文件"}), 400
+
+    if len(files) > 200:
+        return jsonify({"error": f"单次最多上传 200 个文件，当前 {len(files)} 个"}), 400
+
+    visibility = request.form.get("visibility", "public")
+
+    result = kb_service.upload_documents_batch(
+        kb_id=kb_id,
+        files=files,
+        visibility=visibility,
+        uploader_id=user["user_id"],
+        uploader_role=user["role"],
+    )
+    return jsonify(result)
+
+
 @kb_bp.route("/documents/<int:doc_id>", methods=["DELETE"])
 @role_required("doctor", "admin")
 def delete_document(doc_id):
