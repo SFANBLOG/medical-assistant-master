@@ -150,13 +150,25 @@ class NumpyStore:
             self._dirty = True
         self._save_to_disk()
 
-    def insert_batch(self, records: list[VectorRecord]):
-        """批量插入。"""
+    def insert_batch(self, records: list[VectorRecord], flush: bool = True):
+        """批量插入。
+
+        flush=False 时仅置脏标记、不立即落盘，由调用方稍后统一调用
+        flush()（与 MilvusStore 语义对齐：批量播种/重建时避免逐文档
+        全量序列化 pkl，显著加快速度）。
+        """
         with self._lock:
             for r in records:
                 self._records[r.id] = r
             self._dirty = True
-        self._save_to_disk()
+        if flush:
+            self._save_to_disk()
+
+    def flush(self):
+        """将脏数据统一持久化（insert_batch(flush=False) 后的收尾点）。"""
+        with self._lock:
+            if self._dirty:
+                self._save_to_disk()
 
     def delete_by_doc(self, doc_id: int):
         """按文档 ID 删除所有 chunk。"""
