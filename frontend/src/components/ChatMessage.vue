@@ -342,7 +342,7 @@ function openCitations() {
 .msg-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   align-items: flex-start;
 }
 
@@ -407,6 +407,9 @@ function openCitations() {
 
 .msg-row.user .bubble-wrap {
   align-items: flex-end;
+  /* 宽度自适应内容：短问题显示为紧凑气泡，避免拉满成整条“横幅” */
+  width: fit-content;
+  max-width: 78%;
 }
 
 .bubble {

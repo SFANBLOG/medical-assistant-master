@@ -30,6 +30,33 @@ def list_conversations(user_id: int) -> list[dict]:
     return rows
 
 
+def _attach_citations_batch(messages: list[dict], order: str = "id") -> None:
+    """为一批消息一次性补齐引用来源（单条 IN 查询，替代逐条查询）。
+
+    order="id" 保持引用插入顺序；order="similarity" 按相似度降序。
+    """
+    ids = [m["id"] for m in messages if m.get("role") == "assistant" and m.get("id")]
+    if not ids:
+        for m in messages:
+            m["citations"] = []
+        return
+    order_sql = "similarity DESC" if order == "similarity" else "id ASC"
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = fetchall(
+        "SELECT message_id, document_id AS doc_id, chunk_index, source_text, title, similarity "
+        f"FROM citations WHERE message_id IN ({placeholders}) ORDER BY {order_sql}",
+        tuple(ids),
+    )
+    by_msg: dict = {}
+    for r in rows:
+        by_msg.setdefault(r["message_id"], []).append(r)
+    for m in messages:
+        if m.get("role") == "assistant":
+            m["citations"] = by_msg.get(m.get("id"), [])
+        else:
+            m["citations"] = []
+
+
 def get_conversation(conv_id: str, user_id: int) -> dict | None:
     """获取会话详情（含消息及每条 AI 回答的引用来源）。"""
     conv = fetchone("SELECT * FROM conversations WHERE id = %s AND user_id = %s", (conv_id, user_id))
@@ -40,16 +67,7 @@ def get_conversation(conv_id: str, user_id: int) -> dict | None:
         (conv_id,)
     )
     # 为 AI 回答补齐引用来源（citations），让历史会话也能展示「相关文档」
-    for m in messages:
-        if m.get("role") == "assistant":
-            cites = fetchall(
-                "SELECT document_id AS doc_id, chunk_index, source_text, title, similarity "
-                "FROM citations WHERE message_id = %s ORDER BY id ASC",
-                (m["id"],),
-            )
-            m["citations"] = cites
-        else:
-            m["citations"] = []
+    _attach_citations_batch(messages)
     conv["messages"] = messages
     return conv
 
@@ -81,11 +99,19 @@ def chat_stream_sse(
     4. 调用 LLM 流式生成
     5. 保存 AI 回答与引用
     """
-    # 1. 保存用户消息
-    execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'user', %s)",
-        (conv_id, question)
+    # 1. 保存用户消息。若最后一条消息是同内容且无回答（上次生成中断），
+    #    视为重试，不重复入库，避免同题重复问题堆积。
+    last_msg = fetchone(
+        "SELECT role, content FROM messages WHERE conversation_id = %s ORDER BY id DESC LIMIT 1",
+        (conv_id,)
     )
+    if last_msg and last_msg["role"] == "user" and last_msg["content"] == question:
+        pass
+    else:
+        execute(
+            "INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'user', %s)",
+            (conv_id, question)
+        )
     # 首次提问：若会话标题仍为默认「新对话」/空，则用问题首句自动更新标题，
     # 便于在会话列表中区分不同对话（同时兼容历史遗留的默认标题）。
     new_title = question.strip()[:60] or "新对话"
@@ -164,15 +190,5 @@ def get_chat_history(user_id: int, limit: int = 50) -> list[dict]:
         (user_id, limit)
     )
     # 为每条消息关联引用文档
-    for row in rows:
-        msg_id = row.get('id')
-        if msg_id:
-            cites = fetchall(
-                "SELECT document_id AS doc_id, chunk_index, source_text, title, similarity "
-                "FROM citations WHERE message_id = %s ORDER BY similarity DESC",
-                (msg_id,)
-            )
-            row['citations'] = cites
-        else:
-            row['citations'] = []
+    _attach_citations_batch(rows, order="similarity")
     return rows

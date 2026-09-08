@@ -115,46 +115,61 @@
 
       <!-- 消息区 -->
       <div ref="chatBodyRef" class="chat-body">
-        <div v-if="!messages.length" class="welcome">
-          <div class="welcome-icon">
-            <el-icon :size="44"><Monitor /></el-icon>
-          </div>
-          <h2>你好，{{ displayName }}</h2>
-          <p>我是医智助手智能问诊助理，可以帮你解答医疗健康问题。</p>
+        <div class="chat-inner">
+          <div v-if="!messages.length && !convLoading" class="welcome">
+            <div class="welcome-icon">
+              <el-icon :size="44"><Monitor /></el-icon>
+            </div>
+            <h2>你好，{{ displayName }}</h2>
+            <p>我是医智助手智能问诊助理，可以帮你解答医疗健康问题。</p>
 
-          <!-- 当前生效的知识库：让用户清楚自己在问哪个范围 -->
-          <div class="welcome-kb">
-            <span class="welcome-kb-label">当前检索范围</span>
-            <el-tag
-              :type="selectedKbId === undefined || selectedKbId === null ? 'info' : 'primary'"
-              effect="light"
-              round
-              size="small"
-            >
-              {{ currentKbLabel }}
-            </el-tag>
-            <span
-              v-if="selectedKbId === GENERAL_KB_ID || selectedKbId === undefined || selectedKbId === null"
-              class="welcome-kb-tip"
-            >
-              {{ selectedKbId === GENERAL_KB_ID
-                  ? '已启用通用检索，会基于所有可见知识库给出答案'
-                  : '可在右上角选择「通用知识库」一键兜底检索' }}
-            </span>
-          </div>
+            <!-- 当前生效的知识库：让用户清楚自己在问哪个范围 -->
+            <div class="welcome-kb">
+              <span class="welcome-kb-label">当前检索范围</span>
+              <el-tag
+                :type="selectedKbId === undefined || selectedKbId === null ? 'info' : 'primary'"
+                effect="light"
+                round
+                size="small"
+              >
+                {{ currentKbLabel }}
+              </el-tag>
+              <span
+                v-if="selectedKbId === GENERAL_KB_ID || selectedKbId === undefined || selectedKbId === null"
+                class="welcome-kb-tip"
+              >
+                {{ selectedKbId === GENERAL_KB_ID
+                    ? '已启用通用检索，会基于所有可见知识库给出答案'
+                    : '可在右上角选择「通用知识库」一键兜底检索' }}
+              </span>
+            </div>
 
-          <div class="suggestions">
-            <div
-              v-for="s in suggestions"
-              :key="s"
-              class="suggestion"
-              @click="inputText = s"
-            >
-              {{ s }}
+            <div class="suggestions">
+              <div
+                v-for="s in suggestions"
+                :key="s"
+                class="suggestion"
+                @click="inputText = s"
+              >
+                {{ s }}
+              </div>
             </div>
           </div>
+          <!-- 会话加载中：点击会话后立即给出反馈，避免误以为“卡住” -->
+          <div v-else-if="!messages.length && convLoading" class="conv-loading">
+            <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+            <span>正在加载会话内容…</span>
+          </div>
+          <ChatMessage v-for="(m, i) in messages" :key="m.id || i" :message="m" />
+          <!-- 中断恢复：最后一条是用户问题但没有回答时，提供重新生成入口 -->
+          <div v-if="convNeedsReply" class="retry-bar">
+            <el-icon :size="15"><WarningFilled /></el-icon>
+            <span class="retry-text">该问题没有收到回答</span>
+            <el-button size="small" type="primary" plain @click="resendLastQuestion">
+              重新生成回答
+            </el-button>
+          </div>
         </div>
-        <ChatMessage v-for="(m, i) in messages" :key="m.id || i" :message="m" />
       </div>
 
       <!-- 输入区 -->
@@ -247,6 +262,9 @@ onBeforeUnmount(() => {
 const conversations = ref<Conversation[]>([])
 const currentConv = ref<Conversation | null>(null)
 const messages = ref<Message[]>([])
+// 会话加载中标记 + 竞态序号：快速连点多个会话时，过期响应不会覆盖新内容
+const convLoading = ref(false)
+let convSeq = 0
 // kb 选项：通用知识库 id 固定为 0，作为兜底选项排在最前
 const kbs = ref<KnowledgeBase[]>([])
 const selectedKbId = ref<number | undefined | null>(GENERAL_KB_ID)
@@ -342,6 +360,7 @@ function newConversation() {
   inputText.value = ''
   // selectedKbId 故意保留，跨会话复用同一检索范围
   showMobileList.value = false
+  convLoading.value = false
   // 每次新对话重新随机推荐问题
   suggestions.value = pickSuggestions()
 }
@@ -350,20 +369,27 @@ async function selectConversation(conv: Conversation) {
   currentConv.value = conv
   // 历史会话记录了具体的 kb_id；null/undefined 表示当时用的就是通用兜底
   selectedKbId.value = conv.kb_id ?? undefined
-  messages.value = []
   showMobileList.value = false
+  // 切换会话：清空旧消息并进入加载态；seq 防快速连点时旧请求覆盖新结果
+  const seq = ++convSeq
+  messages.value = []
+  convLoading.value = true
   try {
     const detail = await chatApi.getConversation(conv.id)
+    if (seq !== convSeq) return // 已被更新的点击覆盖，丢弃过期响应
     messages.value = (detail.messages || []).map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content || '',
       citations: m.citations || [],
     }))
+    scrollToBottom()
   } catch (e: unknown) {
+    if (seq !== convSeq) return
     ElMessage.error((e as Error).message || '加载会话失败')
+  } finally {
+    if (seq === convSeq) convLoading.value = false
   }
-  scrollToBottom()
 }
 
 async function handleDeleteConversation(conv: Conversation) {
@@ -416,6 +442,23 @@ async function ensureConversation(): Promise<string> {
   return conv.id
 }
 
+// 当前会话打开后若最后一条是用户问题且无任何回答（上次生成中断），提示可重新生成
+const convNeedsReply = computed(() => {
+  if (convLoading.value || sending.value || !messages.value.length) return false
+  return messages.value[messages.value.length - 1].role === 'user'
+})
+
+function createAiMessage(): Message {
+  return reactive<Message>({
+    role: 'assistant',
+    content: '',
+    streaming: true,
+    citations: [],
+    agentMode: agentMode.value,
+    agentSteps: agentMode.value ? [] : undefined,
+  })
+}
+
 async function sendMessage() {
   const q = inputText.value.trim()
   if (!q || sending.value) return
@@ -424,20 +467,40 @@ async function sendMessage() {
   sending.value = true
 
   const userMsg: Message = { role: 'user', content: q }
-  const aiMsg = reactive<Message>({
-    role: 'assistant',
-    content: '',
-    streaming: true,
-    citations: [],
-    agentMode: agentMode.value,
-    agentSteps: agentMode.value ? [] : undefined,
-  })
+  const aiMsg = createAiMessage()
   messages.value.push(userMsg, aiMsg)
   scrollToBottom()
 
   try {
     const convId = await ensureConversation()
     await streamChat(convId, q, aiMsg)
+  } catch (e: unknown) {
+    aiMsg.streaming = false
+    aiMsg.error = true
+    aiMsg.content = (e as Error).message || '发送失败'
+    ElMessage.error((e as Error).message || '发送失败')
+  } finally {
+    sending.value = false
+    scrollToBottom()
+  }
+}
+
+// 历史会话中最后一条是用户问题但没有收到回答（如生成中断）→ 重新请求回答，
+// 不重复插入用户消息（后端对相同末条问题也会去重入库）
+async function resendLastQuestion() {
+  if (sending.value || !currentConv.value) return
+  const last = messages.value[messages.value.length - 1]
+  if (!last || last.role !== 'user') return
+  const q = (last.content || '').trim()
+  if (!q) return
+
+  sending.value = true
+  const aiMsg = createAiMessage()
+  messages.value.push(aiMsg)
+  scrollToBottom()
+
+  try {
+    await streamChat(currentConv.value.id, q, aiMsg)
   } catch (e: unknown) {
     aiMsg.streaming = false
     aiMsg.error = true
@@ -863,7 +926,43 @@ async function loadWeather() {
 .chat-body {
   flex: 1;
   overflow-y: auto;
+}
+
+/* 消息内容列：与底部输入框同宽居中，气泡比例协调 */
+.chat-inner {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
   padding: 24px 20px;
+}
+
+/* 会话加载中 */
+.conv-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 64px 0;
+  color: #909399;
+  font-size: 14px;
+}
+
+/* 中断恢复：最后一条是用户问题但没有回答 */
+.retry-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 2px 0 8px 46px; /* 与 AI 气泡左侧（头像 36 + 间隙 10）对齐 */
+  padding: 8px 14px;
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  border-radius: 10px;
+  color: #e6a23c;
+  font-size: 13px;
+}
+.retry-bar .el-button {
+  margin-left: auto;
 }
 
 /* 欢迎区 */
@@ -940,13 +1039,13 @@ async function loadWeather() {
 
 /* 输入区 */
 .chat-input {
-  padding: 12px 16px;
+  padding: 12px 20px;
   background: #fff;
   border-top: 1px solid var(--el-border-color-light);
 }
 
 .input-box {
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
@@ -1037,7 +1136,7 @@ async function loadWeather() {
     display: none;
   }
 
-  .chat-body {
+  .chat-inner {
     padding: 16px 12px;
   }
 
