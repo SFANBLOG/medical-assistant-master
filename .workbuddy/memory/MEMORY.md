@@ -1,5 +1,14 @@
 # 项目长期记忆
 
+## ⚠️ .git 安全铁律（2026-09-08 事故）
+- 对 `.git` 的任何高危操作（`git gc --prune=now`、`git filter-branch`、`rm -rf .git/<子项>`、`git reflog expire`）**必须先整体备份 `.git`**（如 `tar -cf` 或复制到 /tmp），且**不要与 rm/清理命令在同一条 shell 串联**。8-08 一次 gc+清理后 .git 元数据几乎全灭（仅剩 info/objects 空壳），靠远端 clone 重建，8/31~9/8 的 30 个提交历史丢失粒度（合并为单提交 3f4a354），内容零丢失。
+- 模型权重/大文件进 git 历史的教训：fetch_model 下载残留（`.tmp_*/...*.incomplete`，1.31GB）曾被误提交，Gitee 单文件 100MB 限制下推送必败，需 filter-branch 剔除。
+- 远端：`master` → `git@gitee.com:BLOGSFan/medical_assistant-master.git`（SSH 认证可用）。恢复方法：clone 远端 → 取其 .git 移入项目 → `git add -A` 单提交重建。
+
+## 知识库现状（2026-09-08 更新）
+- 用户 9/6~9/8 重组知识库：`backend/data/uploads/` 现 **441 篇 md**（多疾病库 × 公开/私有 各 20 篇），旧 241 篇结构（含妇儿疾病库）已被替换删除。
+- 工作树已无 `nginx.conf`、`Dockerfile.backend/frontend`（用户删除并提交）；`docker-compose.yml` 仍在。
+
 ## 医智助手（medical_assistant）后端架构要点
 - 活跃运行时 = 「架构 A」：`python -m backend`（根目录执行）/`gunicorn wsgi:app` → **入口文件是 `backend/app.py`**（不是 `backend/app/main.py`），用 `backend.config`（模块级配置）、`backend.routes.*`、`backend/utils/db.py`（双库 MySQL/SQLite，按 `DB_TYPE` 切换）。端口 8010。
 - 蓝图共 7 个：auth/chat/kb/medical/dashboard/agent/review，前缀均为 `/api/<name>`。
