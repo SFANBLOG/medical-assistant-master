@@ -1,7 +1,7 @@
 # 医智助手 · Medical Assistant
 
 > 基于 **RAG + 多智能体（Multi-Agent）+ MCP + Skills** 的医疗知识库智能问答系统，面向医院信息系统教学与演示场景。
-> 内置 **12 个疾病知识库、481 篇医学文档**，提供 **5 种角色门户**，开箱即用：Docker 一键启动，无外部大模型 Key、无 Milvus 也能完整运行。
+> 内置 **12 个疾病知识库、483 篇医学文档**，提供 **5 种角色门户**，开箱即用：Docker 一键启动，无外部大模型 Key、无 Milvus 也能完整运行。
 
 ![license](https://img.shields.io/badge/license-MulanPSL--2.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
@@ -330,7 +330,7 @@ docker compose logs -f backend
 | 后端健康检查 | http://localhost:8010/api/health |
 | Milvus 管理台（Attu） | http://localhost:8000 |
 
-**首次启动**会建库建表、播种 12 个知识库 481 篇文档与 5 类演示账号、预热向量库（耗时较长，`start_period` 已放宽至 300s）。
+**首次启动**会建库建表、播种 12 个知识库 483 篇文档与 5 类演示账号、预热向量库（耗时较长，`start_period` 已放宽至 300s）。
 
 **常用运维命令**
 
@@ -592,7 +592,7 @@ python scripts/eval_rerank_local.py --ce bge-reranker-v2-m3   # CE 增强 A/B
 
 | 模式 | Hit@1 | MRR | GT 平均分 | 噪声/查询 @0.45 |
 |---|---|---|---|---|
-| 全库（481 篇，严格模式） | 95% | 0.975 | 0.987 | 4.05 |
+| 全库（483 篇，严格模式） | 95% | 0.975 | 0.987 | 4.05 |
 | 仅公开（生产等价） | **100%** | **1.000** | **0.988** | **2.60** |
 
 Cross-Encoder 增强经 `bge-reranker-base`（零增益）与 `bge-reranker-v2-m3`（负增益）双重实测否决，故默认关闭。

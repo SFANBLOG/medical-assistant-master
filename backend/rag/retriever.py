@@ -99,6 +99,11 @@ _MEDICAL_SYNONYMS: dict[str, list[str]] = {
     "症状": ["表现", "征象", "迹象", "不适", "主诉"],
     "原因": ["病因", "诱因", "起因", "病原"],
     "预防": ["防止", "避免", "防护", "注意事项", "护理"],
+
+    # === 睡眠/作息（熬夜危害 ↔ 失眠/睡眠卫生文档互桥）===
+    "熬夜": ["失眠", "睡眠不足", "缺觉", "通宵", "晚睡", "作息紊乱"],
+    "失眠": ["熬夜", "睡眠不足", "入睡困难", "睡眠障碍", "睡不着", "睡眠质量差"],
+    "睡眠": ["睡觉", "睡眠质量", "作息", "睡眠卫生", "昼夜节律"],
 }
 
 
@@ -128,6 +133,7 @@ def _expand_query(query: str) -> str:
         "头痛": "symptom", "皮疹": "symptom", "惊厥": "symptom", "呕吐": "symptom",
         "过敏": "symptom", "感染": "symptom", "休克": "symptom", "脱水": "symptom",
         "消化性溃疡": "symptom", "胃溃疡": "symptom",
+        "失眠": "symptom", "熬夜": "symptom", "睡眠": "symptom",
         "儿童": "population", "小儿": "population", "婴儿": "population",
         "成人": "population", "老人": "population",
         "就医": "action", "就诊": "action", "治疗": "action", "预防": "action",

@@ -384,7 +384,8 @@ function openCitations() {
 }
 
 .bubble-wrap {
-  max-width: 78%;
+  /* 与底部输入框同宽居中后，气泡上限放宽至 88%，长消息视觉上与输入框接近等宽 */
+  max-width: 88%;
   display: flex;
   flex-direction: column;
 }
@@ -409,7 +410,7 @@ function openCitations() {
   align-items: flex-end;
   /* 宽度自适应内容：短问题显示为紧凑气泡，避免拉满成整条“横幅” */
   width: fit-content;
-  max-width: 78%;
+  max-width: 88%;
 }
 
 .bubble {
