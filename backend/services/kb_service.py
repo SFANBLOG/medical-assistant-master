@@ -1,7 +1,6 @@
 """
 知识库服务：知识库 CRUD、文档上传/切分/向量化/检索。
 """
-import shutil
 
 from backend import config
 from backend.rag.chunker import chunk_document
@@ -74,9 +73,9 @@ def create_knowledge_base(owner_id: int, name: str, description: str, visibility
 
 
 def delete_knowledge_base(kb_id: int) -> bool:
-    """删除知识库（含文档与向量）。
+    """删除知识库（逻辑删除：向量 + 数据库记录）。
 
-    物理文件删除失败不会阻断逻辑删除。
+    不删除本地磁盘上的知识库目录/文件，便于日后重新导入或人工核对。
     """
     kb = fetchone("SELECT * FROM knowledge_bases WHERE id = %s", (kb_id,))
     if not kb:
@@ -89,15 +88,7 @@ def delete_knowledge_base(kb_id: int) -> bool:
     except Exception as e:
         print(f"[KB] 删除向量失败: {e}")
 
-    # 删除文件（失败不阻断）
-    try:
-        kb_dir = config.UPLOAD_DIR / kb["name"]
-        if kb_dir.exists():
-            shutil.rmtree(kb_dir, ignore_errors=True)
-    except Exception as e:
-        print(f"[KB] 删除知识库目录失败（忽略）: {e}")
-
-    # 删除数据库记录
+    # 删除数据库记录（磁盘文件保留）
     execute("DELETE FROM documents WHERE kb_id = %s", (kb_id,))
     execute("DELETE FROM knowledge_bases WHERE id = %s", (kb_id,))
     return True
@@ -303,9 +294,9 @@ def upload_documents_batch(
 
 
 def delete_document(doc_id: int) -> bool:
-    """删除文档（含向量与文件）。
+    """删除文档（逻辑删除：向量 + 数据库记录）。
 
-    物理文件删除失败不会阻断逻辑删除（向量 + 数据库记录）。
+    不删除本地磁盘上的原始文件，便于溯源或重新导入。
     """
     doc = fetchone("SELECT * FROM documents WHERE id = %s", (doc_id,))
     if not doc:
@@ -318,15 +309,7 @@ def delete_document(doc_id: int) -> bool:
     except Exception as e:
         print(f"[KB] 删除向量失败: {e}")
 
-    # 2. 删除物理文件（失败不阻断）
-    try:
-        file_path = config.UPLOAD_DIR / doc["file_path"]
-        if file_path.exists():
-            file_path.unlink()
-    except Exception as e:
-        print(f"[KB] 删除物理文件失败（忽略）: {e}")
-
-    # 3. 删除数据库记录
+    # 2. 删除数据库记录（磁盘文件保留）
     execute("DELETE FROM citations WHERE document_id = %s", (doc_id,))
     execute("DELETE FROM documents WHERE id = %s", (doc_id,))
     return True
