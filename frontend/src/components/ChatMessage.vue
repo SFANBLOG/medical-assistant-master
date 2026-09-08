@@ -294,16 +294,12 @@ function highlightCitationMarkers(html: string): string {
   })
 }
 
-// 展示层映射：后端真实 Cross-Encoder 分数主要分布在 0.30~0.75，
-// 直接显示会显得偏低。将 [0.30, 0.75] 线性映射到 [0.950, 0.995]，
-// 保证面板内所有文档的展示相关度都在 95% 以上，同时保留 top-N 区分度。
+// 直接显示后端返回的原始相似度分数（不再映射）
 function toDisplaySimilarity(v: number | undefined): number {
   if (v === undefined || v === null) return 0
   const num = Number(v)
   // 兼容 0-1 与 0-100 两种量纲
-  const actual = num > 1 ? num / 100 : num
-  const clamped = Math.max(0.30, Math.min(0.75, actual))
-  return 0.95 + (clamped - 0.30) / (0.75 - 0.30) * 0.045
+  return num > 1 ? num / 100 : num
 }
 
 function formatSimilarity(v: number | undefined): string {

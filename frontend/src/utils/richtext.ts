@@ -107,12 +107,12 @@ export function renderRichText(raw: string): string {
 
   for (const line of lines) {
     if (line.trim() === '') {
-      // 空行：结束当前列表与段落，后续文字另起段落
+      // 空行：刷出段落；若当前处于列表中，插入一个空占位块（不渲染），
+      // 用于区分「列表项之间的空行（序号连续）」与「列表后另起段落（列表结束）」
       flushPara()
       const last = blocks[blocks.length - 1]
       if (last && (last.type === 'ol' || last.type === 'ul')) {
-        // 列表到此为止，用一个空段落占位断开（不影响渲染）
-        blocks.push({ type: 'p', html: ' ' })
+        blocks.push({ type: 'p', html: '' })
       }
       continue
     }
@@ -130,6 +130,22 @@ export function renderRichText(raw: string): string {
     // 列表项：先刷出前面的段落
     flushPara()
     const last = blocks[blocks.length - 1]
+    const prev = blocks[blocks.length - 2]
+    // 若列表项被空行隔断（前一个是空占位块、再前一个是同类型列表），
+    // 则移除占位块并合并回原列表，保证序号连续（否则会拆成多个 <ol>，
+    // 浏览器编号会重置为 1. 1. 1.…）
+    if (
+      prev &&
+      (prev.type === kind) &&
+      (kind === 'ol' || kind === 'ul') &&
+      last &&
+      last.type === 'p' &&
+      last.html === ''
+    ) {
+      blocks.pop()
+      prev.items.push({ title: escapeHtml(content), body: [] })
+      continue
+    }
     if (last && (last.type === kind) && (kind === 'ol' || kind === 'ul')) {
       last.items.push({ title: escapeHtml(content), body: [] })
     } else {

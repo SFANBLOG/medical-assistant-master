@@ -28,8 +28,8 @@
             <div class="conv-item-time">{{ formatTime(conv.updated_at || conv.created_at) }}</div>
           </div>
           <el-icon
-            v-if="currentConv?.id !== conv.id"
             class="conv-del"
+            title="删除该会话"
             @click.stop="handleDeleteConversation(conv)"
           >
             <Delete />
