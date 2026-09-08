@@ -2,7 +2,7 @@
 # Milvus本地持久化数据，绝对禁止提交git
 milvus_data/
 milvus-lite-data/
-
+.workbuddy
 # 模型权重、embedding文件、大二进制模型
 *.bin
 *.safetensors
