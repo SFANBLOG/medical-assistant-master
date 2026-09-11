@@ -490,9 +490,9 @@ class CrossEncoderReranker:
         for name in _CE_CANDIDATES:
             for cand in [
                 model_dir / name,
-                model_dir / "models" / f"BAAI--{name}" / "snapshots" / "master",
+                model_dir / f"BAAI--{name}" / "snapshots" / "master",
                 model_dir / f"BAAI__{name}",
-                model_dir / "models" / f"BAAI--{name}",
+                model_dir / f"BAAI--{name}",
             ]:
                 if cand.is_dir() and (cand / "config.json").exists():
                     print(f"[Reranker] 自动检测到 Cross-Encoder 模型: {cand}")

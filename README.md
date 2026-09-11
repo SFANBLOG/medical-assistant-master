@@ -540,7 +540,7 @@ medical_assistant-master/
 │   ├── rag/                          # 检索生成：bm25 embedder vectorstore reranker retriever chunker llm
 │   ├── models/                       # schema.sql / schema_mysql.sql（纯 SQL，非 ORM）
 │   ├── utils/                        # db jwt_utils file_parser text_utils errors ...
-│   ├── data/                         # uploads（医学文档，按知识库/公开私有分目录）· models（BGE）
+│   ├── data/                         # uploads（医学文档，按知识库/公开私有分目录）· ai_models（BGE 嵌入/重排模型）
 │   ├── Dockerfile.backend            # 后端镜像
 │   └── requirements.txt              # 后端依赖（唯一权威，另一份在根目录为环境冻结产物）
 ├── frontend/                         # Vue 3 + TS 前端

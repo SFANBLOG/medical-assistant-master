@@ -107,7 +107,7 @@ JWT_EXP_HOURS = 24
 # ---- 路径 ----
 DATA_DIR = BACKEND_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
-MODEL_DIR = DATA_DIR / "models"
+MODEL_DIR = DATA_DIR / "ai_models"
 SQLITE_PATH = DATA_DIR / f"{DATABASE_NAME}.db"
 
 # 确保目录存在

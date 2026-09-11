@@ -103,9 +103,9 @@ def _find_model_in_model_dir(model_name: str) -> Optional[Path]:
     candidates = [
         model_dir / model_name,
         model_dir / short_name,
-        model_dir / "models" / f"BAAI--{short_name}" / "snapshots" / "master",
+        model_dir / f"BAAI--{short_name}" / "snapshots" / "master",
         model_dir / f"BAAI__{short_name}",
-        model_dir / "models" / f"BAAI--{short_name}",
+        model_dir / f"BAAI--{short_name}",
     ]
 
     for cand in candidates:

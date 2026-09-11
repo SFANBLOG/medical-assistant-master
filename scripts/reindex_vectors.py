@@ -14,7 +14,7 @@
 
 注意：
   - 需要 sentence_transformers + torch 已安装
-  - 需要 BGE 模型文件在 backend/data/models/ 下可被自动发现
+  - 需要 BGE 模型文件在 backend/data/ai_models/ 下可被自动发现
   - Milvus 模式下也会重建 NumpyStore 兜底缓存（Milvus 侧需单独处理）
 """
 import argparse

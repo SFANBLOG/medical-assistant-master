@@ -185,7 +185,7 @@ def main():
         else:
             print("\n❌ [Model] 全部下载源失败！")
             print("备选方案：")
-            print("1.手动下载模型，放到 data/models/bge-base-zh-v1.5")
+            print("1.手动下载模型，放到 data/ai_models/bge-base-zh-v1.5")
             print("2.临时使用内置哈希向量，不需要embedding模型\n")
     finally:
         # 无论成功失败，清除锁文件

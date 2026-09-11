@@ -154,7 +154,7 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-xxx}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-deepseek-chat}
-      # 真实 BGE 语义向量：auto = 在 MODEL_DIR(./backend/data/models) 下自动检测已下载模型
+      # 真实 BGE 语义向量：auto = 在 MODEL_DIR(./backend/data/ai_models) 下自动检测已下载模型
       # （优先 bge-small-zh-v1.5，其次 bge-base-zh-v1.5；本机已有 BAAI--bge-base-zh-v1.5）。
       # 需 backend 构建时 INSTALL_LOCAL_EMBED=true（已开启）且挂载 ./backend/data/models。
       # 写入 HF 镜像源，万一需自动下载小模型也不会被墙。
@@ -189,7 +189,7 @@ services:
       - uploads_data:/app/backend/data/uploads
       # 挂载宿主机向量模型目录：本机已有 bge-base-zh-v1.5（嵌入）与 bge-reranker-base（重排），
       # 容器启动即加载，无需联网下载；新下载的模型也会落回本机持久化。
-      - ./backend/data/models:/app/backend/data/models
+      - ./backend/data/ai_models:/app/backend/data/ai_models
     depends_on:
       mysql:
         condition: service_healthy
