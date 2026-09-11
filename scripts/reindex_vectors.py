@@ -35,7 +35,7 @@ def main():
     args = parser.parse_args()
 
     from backend import config
-    from backend.utils.db import fetchall, _placeholder
+    from backend.utils.db import fetchall
     from backend.rag.chunker import chunk_document
     from backend.rag.embedder import get_embedder
     from backend.rag.vectorstore import get_vectorstore, VectorRecord

@@ -7,11 +7,10 @@ MCP Server 实现。
 传输层：HTTP JSON-RPC（Flask 蓝图挂载）
 协议版本：MCP 2024-11-05
 """
-import json
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 
-from backend.mcp.tools_registry import list_all_mcp_tools, call_mcp_tool
 from backend.mcp.resources import list_knowledge_resources, read_knowledge_resource
+from backend.mcp.tools_registry import list_all_mcp_tools, call_mcp_tool
 
 mcp_bp = Blueprint("mcp", __name__)
 

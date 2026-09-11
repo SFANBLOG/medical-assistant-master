@@ -4,9 +4,9 @@ Agent 问答服务：会话落库 + 运行编排器 + SSE 事件推送 + 轨迹/
 import json
 from typing import Generator
 
-from backend.utils.db import execute, fetchone, fetchall
-from backend.rag.llm import _clean_answer_text
 from backend.agent.orchestrator import run_agent
+from backend.rag.llm import _clean_answer_text
+from backend.utils.db import execute, fetchone, fetchall
 
 
 def _sse(event: dict) -> str:

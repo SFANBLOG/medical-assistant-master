@@ -3,10 +3,11 @@
 Uses a tiny raw multipart encoder so we don't fight Werkzeug's test client
 quirks around multi-value fields.
 """
-import sys, json
+import json
+import sys
+
 sys.path.insert(0, '.')
 from backend.app import create_app
-from backend.services import kb_service
 from backend.utils.db import execute
 
 app = create_app()
@@ -73,8 +74,6 @@ body, ctype = build_multipart(
 execute("DELETE FROM documents WHERE kb_id = %s AND filename IN %s",
         (kb_id, ('bulk_test_a.md', 'bulk_test_b.md')))
 # Also try to remove orphan files
-import os
-from pathlib import Path
 from backend import config
 vis_dir = config.UPLOAD_DIR / target['name'] / '公开'
 for nm in ('bulk_test_a.md', 'bulk_test_b.md'):

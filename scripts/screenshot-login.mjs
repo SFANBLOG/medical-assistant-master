@@ -1,9 +1,9 @@
 /**
  * 单独截图：登录页（无登录态）
  */
-import { createRequire } from 'module'
+import {createRequire} from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import {fileURLToPath} from 'url'
 
 const require = createRequire(import.meta.url)
 const puppeteer = require('puppeteer-core')

@@ -3,8 +3,8 @@
 
 查询患者病历/住院记录。
 """
-from backend.agent.skills.base_skill import BaseSkill
 from backend.agent import tools as toolmod
+from backend.agent.skills.base_skill import BaseSkill
 
 
 class PatientRecordsSkill(BaseSkill):

@@ -18,7 +18,7 @@ from backend import config
 from backend.rag.chunker import chunk_document
 from backend.rag.embedder import get_embedder
 from backend.rag.vectorstore import get_vectorstore, VectorRecord
-from backend.utils.db import execute, fetchone
+from backend.utils.db import fetchone
 from backend.utils.file_parser import is_allowed, parse_file
 
 KB_NAME = "妇儿疾病"

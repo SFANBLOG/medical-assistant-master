@@ -9,10 +9,10 @@
  *
  * 截图输出到 ../docs/images/
  */
-import { createRequire } from 'module'
-import { mkdirSync } from 'fs'
+import {createRequire} from 'module'
+import {mkdirSync} from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import {fileURLToPath} from 'url'
 
 const require = createRequire(import.meta.url)
 // puppeteer-core 通过 NODE_PATH / 前端 node_modules 解析

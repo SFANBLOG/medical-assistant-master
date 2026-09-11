@@ -5,7 +5,8 @@ from werkzeug.security import check_password_hash
 
 from backend.utils.db import fetchone, execute
 from backend.utils.jwt_utils import create_token
-from backend import config
+
+
 def login(username: str, password: str) -> dict | None:
     """用户登录，返回 token 和用户信息，失败返回 None。"""
     user = fetchone("SELECT * FROM users WHERE username = %s", (username,))

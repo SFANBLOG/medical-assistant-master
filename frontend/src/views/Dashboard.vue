@@ -80,18 +80,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { dashboardApi, chatApi } from '@/api'
-import type {
-  SystemOverview,
-  UserStats,
-  RevenueStats,
-  DeptDistItem,
-  BillCategoryItem,
-} from '@/types'
-import { useAuthStore } from '@/stores/auth'
+import {computed, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {ElMessage} from 'element-plus'
+import {chatApi, dashboardApi} from '@/api'
+import type {BillCategoryItem, DeptDistItem, RevenueStats, SystemOverview, UserStats,} from '@/types'
+import {useAuthStore} from '@/stores/auth'
 import EChart from '@/components/EChart.vue'
 
 const auth = useAuthStore()

@@ -4,9 +4,9 @@
 职责：复诊随访、慢病管理、术后跟踪、健康管理提醒。
 """
 from backend.agent.base_agent import BaseAgent
-from backend.rag.retriever import build_context
-from backend.rag.llm import _clean_answer_text
 from backend.agent.guardrails import DISCLAIMER
+from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class FollowUpAgent(BaseAgent):

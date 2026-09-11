@@ -105,12 +105,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { medicalApi } from '@/api'
-import type { Hospitalization, Bill } from '@/types'
-import { useAuthStore } from '@/stores/auth'
-import { pickStatus, HOSPITAL_STATUS, BILL_STATUS } from '@/utils/constants'
-import { formatDateTime } from '@/utils/format'
+import {computed, onMounted, ref, watch} from 'vue'
+import {medicalApi} from '@/api'
+import type {Bill, Hospitalization} from '@/types'
+import {useAuthStore} from '@/stores/auth'
+import {BILL_STATUS, HOSPITAL_STATUS, pickStatus} from '@/utils/constants'
+import {formatDateTime} from '@/utils/format'
 
 const auth = useAuthStore()
 

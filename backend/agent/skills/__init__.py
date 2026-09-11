@@ -5,12 +5,12 @@
 与 Tool 的区别：Tool 是单函数调用，Skill 是多步骤的能力组合。
 与 Agent 的区别：Agent 有独立推理循环，Skill 无独立状态。
 """
-from backend.agent.skills.base_skill import BaseSkill
-from backend.agent.skills.medical_qa import MedicalQASkill
-from backend.agent.skills.triage_skill import TriageSkill
 from backend.agent.skills.appointment_skill import AppointmentSkill
-from backend.agent.skills.patient_records_skill import PatientRecordsSkill
+from backend.agent.skills.base_skill import BaseSkill
 from backend.agent.skills.health_education import HealthEducationSkill
+from backend.agent.skills.medical_qa import MedicalQASkill
+from backend.agent.skills.patient_records_skill import PatientRecordsSkill
+from backend.agent.skills.triage_skill import TriageSkill
 
 # 技能注册表
 SKILL_REGISTRY: dict[str, type[BaseSkill]] = {

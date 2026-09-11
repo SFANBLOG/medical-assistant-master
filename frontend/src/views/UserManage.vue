@@ -94,11 +94,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { authApi, ROLE_LABELS } from '@/api'
-import type { User, Role } from '@/types'
-import { formatDateTime } from '@/utils/format'
+import {computed, onMounted, reactive, ref, watch} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {authApi, ROLE_LABELS} from '@/api'
+import type {Role, User} from '@/types'
+import {formatDateTime} from '@/utils/format'
 
 const loading = ref(false)
 const saving = ref(false)

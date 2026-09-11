@@ -3,8 +3,8 @@
 
 症状→科室分诊推荐。
 """
-from backend.agent.skills.base_skill import BaseSkill
 from backend.agent import tools as toolmod
+from backend.agent.skills.base_skill import BaseSkill
 
 
 class TriageSkill(BaseSkill):

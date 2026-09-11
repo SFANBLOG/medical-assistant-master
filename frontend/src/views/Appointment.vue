@@ -131,12 +131,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { medicalApi, getPatientOptions, getDoctorOptions } from '@/api'
-import type { Appointment } from '@/types'
-import { useAuthStore } from '@/stores/auth'
-import { pickStatus, APPOINTMENT_STATUS, DEPARTMENTS, TIME_SLOTS } from '@/utils/constants'
+import {computed, onMounted, reactive, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {getDoctorOptions, getPatientOptions, medicalApi} from '@/api'
+import type {Appointment} from '@/types'
+import {useAuthStore} from '@/stores/auth'
+import {APPOINTMENT_STATUS, DEPARTMENTS, pickStatus, TIME_SLOTS} from '@/utils/constants'
 
 const auth = useAuthStore()
 const canViewAll = computed(() => ['doctor', 'admin'].includes(auth.role))

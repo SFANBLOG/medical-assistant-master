@@ -1,8 +1,8 @@
 """仪表盘路由"""
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify
 
-from backend.utils.jwt_utils import login_required, current_user, role_required
 from backend.services import dashboard_service
+from backend.utils.jwt_utils import login_required, current_user, role_required
 
 dashboard_bp = Blueprint("dashboard", __name__)
 

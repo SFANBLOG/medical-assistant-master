@@ -16,8 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gen_flowcharts import (  # noqa: E402
-    _box, _arrow, FONT_PATH,
-    C_PROC, C_SUB, C_DATA, C_DEC,
+    _arrow, FONT_PATH,
 )
 
 import matplotlib  # noqa: E402

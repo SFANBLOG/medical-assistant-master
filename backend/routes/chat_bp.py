@@ -1,10 +1,9 @@
 """聊天路由（含 SSE 流式）"""
-import json
 
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 
-from backend.utils.jwt_utils import login_required, current_user
 from backend.services import chat_service
+from backend.utils.jwt_utils import login_required, current_user
 
 chat_bp = Blueprint("chat", __name__)
 

@@ -1,7 +1,7 @@
 """
 仪表盘服务：系统统计数据。
 """
-from backend.utils.db import fetchone, fetchall, DB_TYPE
+from backend.utils.db import fetchone, fetchall
 
 
 def get_user_stats() -> dict:

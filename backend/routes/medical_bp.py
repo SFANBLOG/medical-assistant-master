@@ -1,8 +1,8 @@
 """医疗业务路由"""
 from flask import Blueprint, request, jsonify
 
-from backend.utils.jwt_utils import login_required, current_user, role_required
 from backend.services import medical_service
+from backend.utils.jwt_utils import login_required, current_user, role_required
 
 medical_bp = Blueprint("medical", __name__)
 

@@ -4,10 +4,10 @@
 import uuid
 from typing import Generator
 
-from backend.utils.db import fetchone, fetchall, execute
-from backend.rag.retriever import retrieve, build_context
 from backend.rag.llm import chat_stream, _clean_answer_text
-from backend import config
+from backend.rag.retriever import retrieve, build_context
+from backend.utils.db import fetchone, fetchall, execute
+
 
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
     """创建新会话。"""

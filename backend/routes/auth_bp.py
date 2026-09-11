@@ -2,9 +2,9 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash
 
-from backend.utils.jwt_utils import login_required, current_user, role_required
-from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
 from backend.services import auth_service
+from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
+from backend.utils.jwt_utils import login_required, current_user, role_required
 
 auth_bp = Blueprint("auth", __name__)
 

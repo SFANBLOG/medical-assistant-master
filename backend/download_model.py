@@ -8,8 +8,8 @@
 """
 import os
 import shutil
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 # 确保 backend 目录加入搜索路径

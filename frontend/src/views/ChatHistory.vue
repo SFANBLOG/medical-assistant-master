@@ -40,12 +40,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ChatLineSquare } from '@element-plus/icons-vue'
-import { chatApi } from '@/api'
-import type { Message } from '@/types'
-import { formatDateTime } from '@/utils/format'
+import {computed, onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {ChatLineSquare} from '@element-plus/icons-vue'
+import {chatApi} from '@/api'
+import type {Message} from '@/types'
+import {formatDateTime} from '@/utils/format'
 import ChatMessage from '@/components/ChatMessage.vue'
 
 const loading = ref(false)

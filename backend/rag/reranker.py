@@ -26,7 +26,6 @@ from typing import List, Optional
 
 from backend import config
 
-
 # ---- 中文停用词 ----
 _STOPWORDS = {
     "的", "了", "是", "在", "和", "与", "及", "就", "都", "而", "也", "很",
@@ -475,7 +474,6 @@ class CrossEncoderReranker:
     @staticmethod
     def _auto_detect_ce_model():
         """在 MODEL_DIR 下自动搜索已下载的 Cross-Encoder 模型。"""
-        from pathlib import Path
 
         model_dir = config.MODEL_DIR
         if not model_dir.exists():

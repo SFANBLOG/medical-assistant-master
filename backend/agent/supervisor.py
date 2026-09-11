@@ -17,9 +17,8 @@ from typing import Generator, Optional
 import requests
 
 from backend import config
-from backend.agent.sub_agents import get_agent, get_all_agents, AGENT_REGISTRY
 from backend.agent.roles import classify_role  # 离线降级
-
+from backend.agent.sub_agents import get_agent, AGENT_REGISTRY
 
 # Supervisor 的 LLM 意图分类提示模板
 _CLASSIFY_PROMPT = """你是医智助手的调度中心。根据用户问题和身份，选择最合适的智能体处理。

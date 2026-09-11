@@ -3,12 +3,12 @@
 
 所有子智能体在此注册，Supervisor 通过 AGENT_REGISTRY 获取实例。
 """
-from backend.agent.sub_agents.triage_agent import TriageAgent
 from backend.agent.sub_agents.doctor_agent import DoctorAgent
-from backend.agent.sub_agents.nurse_agent import NurseAgent
-from backend.agent.sub_agents.knowledge_agent import KnowledgeAgent
-from backend.agent.sub_agents.schedule_agent import ScheduleAgent
 from backend.agent.sub_agents.followup_agent import FollowUpAgent
+from backend.agent.sub_agents.knowledge_agent import KnowledgeAgent
+from backend.agent.sub_agents.nurse_agent import NurseAgent
+from backend.agent.sub_agents.schedule_agent import ScheduleAgent
+from backend.agent.sub_agents.triage_agent import TriageAgent
 
 # 子智能体注册表：key → 类
 AGENT_REGISTRY: dict[str, type] = {

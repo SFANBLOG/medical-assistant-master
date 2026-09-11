@@ -4,7 +4,6 @@ MCP Client 实现。
 供智能体内部调用外部 MCP 工具（如接入第三方医疗 API）。
 当前版本主要用于统一本地工具调用接口，未来可扩展接入外部 MCP 服务。
 """
-import json
 from typing import Optional
 
 import requests

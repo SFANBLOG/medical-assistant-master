@@ -195,12 +195,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Loading, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
-import { kbApi } from '@/api'
-import type { KnowledgeBase, DocumentItem } from '@/types'
-import { formatDate } from '@/utils/format'
+import {computed, onMounted, reactive, ref} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {CircleCheckFilled, CircleCloseFilled, Document, Loading} from '@element-plus/icons-vue'
+import {kbApi} from '@/api'
+import type {DocumentItem, KnowledgeBase} from '@/types'
+import {formatDate} from '@/utils/format'
 
 /** 队列里单个文件的状态 */
 interface QueueItem {

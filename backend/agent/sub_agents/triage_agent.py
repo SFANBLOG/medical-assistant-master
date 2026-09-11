@@ -4,9 +4,9 @@
 职责：根据患者主诉/症状，判断可能的就诊科室并给出分诊与就医建议。
 """
 from backend.agent.base_agent import BaseAgent
-from backend.rag.retriever import build_context
-from backend.rag.llm import _clean_answer_text
 from backend.agent.guardrails import DISCLAIMER
+from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class TriageAgent(BaseAgent):

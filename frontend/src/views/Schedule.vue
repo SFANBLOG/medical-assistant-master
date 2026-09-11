@@ -107,12 +107,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { medicalApi, authApi, ROLE_LABELS } from '@/api'
-import type { Schedule } from '@/types'
-import { useAuthStore } from '@/stores/auth'
-import { pickStatus, SCHEDULE_SHIFTS, SCHEDULE_STATUS, DEPARTMENTS } from '@/utils/constants'
+import {onMounted, reactive, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {authApi, medicalApi, ROLE_LABELS} from '@/api'
+import type {Schedule} from '@/types'
+import {useAuthStore} from '@/stores/auth'
+import {DEPARTMENTS, pickStatus, SCHEDULE_SHIFTS, SCHEDULE_STATUS} from '@/utils/constants'
 
 const auth = useAuthStore()
 

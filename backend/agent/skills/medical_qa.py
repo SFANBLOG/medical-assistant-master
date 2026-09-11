@@ -3,10 +3,10 @@
 
 基于 RAG 的医学知识问答，被多个智能体复用。
 """
-from backend.agent.skills.base_skill import BaseSkill
 from backend.agent import tools as toolmod
-from backend.rag.retriever import build_context
+from backend.agent.skills.base_skill import BaseSkill
 from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class MedicalQASkill(BaseSkill):

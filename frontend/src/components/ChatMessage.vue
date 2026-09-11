@@ -144,11 +144,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import { Cpu, ArrowUp, ArrowDown, Document, Monitor, UserFilled, FirstAidKit, User } from '@element-plus/icons-vue'
-import type { Message, AgentStep, Citation } from '@/types'
-import { renderRichText } from '@/utils/richtext'
-import { useAuthStore } from '@/stores/auth'
+import {computed, nextTick, ref} from 'vue'
+import {ArrowDown, ArrowUp, Cpu, Document, FirstAidKit, Monitor, User, UserFilled} from '@element-plus/icons-vue'
+import type {AgentStep, Citation, Message} from '@/types'
+import {renderRichText} from '@/utils/richtext'
+import {useAuthStore} from '@/stores/auth'
 
 const props = defineProps<{ message: Message }>()
 

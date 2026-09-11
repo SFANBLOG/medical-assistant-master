@@ -63,11 +63,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
-import { UserFilled, FirstAidKit, User, Setting } from '@element-plus/icons-vue'
-import { useAuthStore } from '@/stores/auth'
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {ElMessageBox} from 'element-plus'
+import {FirstAidKit, Setting, User, UserFilled} from '@element-plus/icons-vue'
+import {useAuthStore} from '@/stores/auth'
 import SideMenu from './SideMenu.vue'
 
 const auth = useAuthStore()

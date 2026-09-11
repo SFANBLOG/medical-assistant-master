@@ -12,7 +12,6 @@
   - Skill 被 Agent 调用，无独立状态，是 Agent 的能力插件
 """
 from abc import ABC, abstractmethod
-from typing import Any
 
 
 class BaseSkill(ABC):

@@ -3,7 +3,9 @@
 参考《面试准备/图片》下的 6 张参考流程图主题，结合本项目实际实现生成。
 """
 import os
+
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, PathPatch

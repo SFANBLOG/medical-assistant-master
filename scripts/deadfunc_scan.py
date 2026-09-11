@@ -12,7 +12,6 @@ Excludes false positives:
 """
 import ast
 import os
-import sys
 from collections import defaultdict
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "backend")

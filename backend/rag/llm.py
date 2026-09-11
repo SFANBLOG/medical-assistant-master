@@ -9,8 +9,9 @@
 """
 import json
 import re
+from typing import Generator
+
 import requests
-from typing import Generator, Optional
 
 from backend import config
 

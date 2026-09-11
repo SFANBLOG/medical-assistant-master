@@ -15,9 +15,9 @@ from typing import Generator, Optional
 
 from backend import config
 from backend.agent import tools as toolmod
-from backend.rag.retriever import build_context
-from backend.rag.llm import _clean_answer_text
 from backend.agent.guardrails import ensure_disclaimer, DISCLAIMER
+from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class BaseAgent(ABC):

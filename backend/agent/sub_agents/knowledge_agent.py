@@ -5,9 +5,9 @@
 作为其他智能体的委派目标（delegate target），也是默认兜底智能体。
 """
 from backend.agent.base_agent import BaseAgent
-from backend.rag.retriever import build_context
-from backend.rag.llm import _clean_answer_text
 from backend.agent.guardrails import DISCLAIMER
+from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class KnowledgeAgent(BaseAgent):

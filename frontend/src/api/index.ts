@@ -5,29 +5,29 @@
  * - 响应拦截器直接返回 data；401 自动清理登录态并跳转登录页
  * - SSE 流式聊天使用原生 fetch（需要手动带 token 头）
  */
-import axios, { type AxiosInstance, type AxiosError } from 'axios'
+import axios, {type AxiosError, type AxiosInstance} from 'axios'
 import type {
-  AuthResult,
-  User,
-  Paged,
-  KnowledgeBase,
-  DocumentItem,
-  Conversation,
-  Message,
-  Hospitalization,
-  Bill,
-  Appointment,
-  NursingRecord,
-  Schedule,
-  SystemOverview,
-  UserStats,
-  KbStats,
-  BusinessStats,
-  ChatStats,
-  RevenueStats,
-  DeptDistItem,
-  BillCategoryItem,
-  Role,
+    Appointment,
+    AuthResult,
+    Bill,
+    BillCategoryItem,
+    BusinessStats,
+    ChatStats,
+    Conversation,
+    DeptDistItem,
+    DocumentItem,
+    Hospitalization,
+    KbStats,
+    KnowledgeBase,
+    Message,
+    NursingRecord,
+    Paged,
+    RevenueStats,
+    Role,
+    Schedule,
+    SystemOverview,
+    User,
+    UserStats,
 } from '@/types'
 
 /* ======================= Axios 实例 ======================= */

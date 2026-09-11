@@ -77,13 +77,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { medicalApi, getPatientOptions } from '@/api'
-import type { NursingRecord } from '@/types'
-import { useAuthStore } from '@/stores/auth'
-import { pickStatus, NURSING_TYPES } from '@/utils/constants'
-import { formatDateTime } from '@/utils/format'
+import {onMounted, reactive, ref, watch} from 'vue'
+import {ElMessage} from 'element-plus'
+import {getPatientOptions, medicalApi} from '@/api'
+import type {NursingRecord} from '@/types'
+import {useAuthStore} from '@/stores/auth'
+import {NURSING_TYPES, pickStatus} from '@/utils/constants'
+import {formatDateTime} from '@/utils/format'
 
 const auth = useAuthStore()
 

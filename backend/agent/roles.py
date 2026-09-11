@@ -9,7 +9,6 @@ Supervisor 根据问题意图与用户身份，把任务派给最合适的工作
 每个角色有专属系统提示与「可用工具白名单」，在线模式下据此过滤函数调用，
 离线模式下据此决定调用哪些工具与回答口吻。
 """
-from typing import Optional
 
 ROLES = {
     "triage": {

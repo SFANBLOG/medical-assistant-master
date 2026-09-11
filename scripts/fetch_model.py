@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import os
 import shutil
@@ -23,7 +22,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

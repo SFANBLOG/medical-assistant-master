@@ -52,7 +52,6 @@ from backend.rag.bm25 import BM25Index  # noqa: E402
 from backend.rag.reranker import (  # noqa: E402
     CrossEncoderReranker,
     get_reranker,
-    _extract_keywords,
 )
 
 try:

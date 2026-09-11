@@ -27,13 +27,12 @@
 from typing import Optional
 
 from backend import config
-from backend.rag.embedder import get_embedder
-from backend.rag.vectorstore import get_vectorstore
 from backend.rag.bm25 import BM25Index
-from backend.rag.reranker import get_reranker
+from backend.rag.embedder import get_embedder
 from backend.rag.llm import _clean_answer_text
+from backend.rag.reranker import get_reranker
+from backend.rag.vectorstore import get_vectorstore
 from backend.utils.db import fetchall
-
 
 # ---- BM25 索引（懒加载单例，随向量库内容构建一次）----
 _bm25_index: Optional[BM25Index] = None

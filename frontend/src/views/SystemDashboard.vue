@@ -59,18 +59,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { dashboardApi, chatApi } from '@/api'
+import {computed, onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import {chatApi, dashboardApi} from '@/api'
 import type {
-  SystemOverview,
-  UserStats,
-  KbStats,
+  BillCategoryItem,
   BusinessStats,
   ChatStats,
-  RevenueStats,
   DeptDistItem,
-  BillCategoryItem,
+  KbStats,
+  RevenueStats,
+  SystemOverview,
+  UserStats,
 } from '@/types'
 import EChart from '@/components/EChart.vue'
 

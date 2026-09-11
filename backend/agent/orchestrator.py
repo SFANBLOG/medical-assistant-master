@@ -90,9 +90,6 @@ def _run_v1(
 ) -> Generator[dict, None, None]:
     """v1 架构：原有单体编排器（关键字路由 + 在线/离线双路径）。"""
     from backend.agent import roles
-    from backend.agent import tools as toolmod
-    from backend.rag.retriever import build_context
-    from backend.rag.llm import _clean_answer_text
 
     role_key = roles.classify_role(question, state.get("role", "public"))
     role_info = roles.get_role(role_key)
@@ -202,7 +199,6 @@ def _run_offline_v1(question, state, role_key, memory_ctx):
     from backend.agent import roles
     from backend.agent import tools as toolmod
     from backend.rag.retriever import build_context
-    from backend.rag.llm import _clean_answer_text
 
     role_info = roles.get_role(role_key)
     yield {"type": "thought", "content": f"已路由至【{role_info['label']}】。先检索医学知识库获取权威资料。"}

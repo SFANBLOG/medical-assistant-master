@@ -8,17 +8,16 @@ from flask import Flask
 from flask_cors import CORS
 
 from backend import config
-from backend.utils.db import init_schema, DB_TYPE
-
+from backend.mcp.server import mcp_bp
+from backend.routes.agent_bp import agent_bp
 # 导入蓝图
 from backend.routes.auth_bp import auth_bp
 from backend.routes.chat_bp import chat_bp
+from backend.routes.dashboard_bp import dashboard_bp
 from backend.routes.kb_bp import kb_bp
 from backend.routes.medical_bp import medical_bp
-from backend.routes.dashboard_bp import dashboard_bp
-from backend.routes.agent_bp import agent_bp
 from backend.routes.review_bp import review_bp
-from backend.mcp.server import mcp_bp
+from backend.utils.db import init_schema, DB_TYPE
 from backend.utils.errors import register_error_handlers
 
 

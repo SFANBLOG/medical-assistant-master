@@ -1,9 +1,9 @@
 /**
  * 路由定义 + 角色守卫
  */
-import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import type {RouteRecordRaw} from 'vue-router'
+import {createRouter, createWebHistory} from 'vue-router'
+import {useAuthStore} from '@/stores/auth'
 import MainLayout from '@/layouts/MainLayout.vue'
 
 declare module 'vue-router' {

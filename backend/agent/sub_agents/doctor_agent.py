@@ -4,9 +4,9 @@
 职责：结合病历/检索给诊断参考与用药建议（强制 HITL）。
 """
 from backend.agent.base_agent import BaseAgent
-from backend.rag.retriever import build_context
-from backend.rag.llm import _clean_answer_text
 from backend.agent.guardrails import DISCLAIMER
+from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class DoctorAgent(BaseAgent):

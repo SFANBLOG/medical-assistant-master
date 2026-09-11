@@ -3,10 +3,10 @@
 
 生成健康教育内容，用于护理指导与康复宣教。
 """
-from backend.agent.skills.base_skill import BaseSkill
 from backend.agent import tools as toolmod
-from backend.rag.retriever import build_context
+from backend.agent.skills.base_skill import BaseSkill
 from backend.rag.llm import _clean_answer_text
+from backend.rag.retriever import build_context
 
 
 class HealthEducationSkill(BaseSkill):

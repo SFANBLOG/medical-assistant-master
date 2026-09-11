@@ -3,8 +3,8 @@
 
 预约挂号工作流，包含 HITL 审计与防重复提交。
 """
-from backend.agent.skills.base_skill import BaseSkill
 from backend.agent import tools as toolmod
+from backend.agent.skills.base_skill import BaseSkill
 
 
 class AppointmentSkill(BaseSkill):

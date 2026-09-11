@@ -1,8 +1,8 @@
 """知识库路由"""
 from flask import Blueprint, request, jsonify
 
-from backend.utils.jwt_utils import login_required, current_user, role_required
 from backend.services import kb_service
+from backend.utils.jwt_utils import login_required, current_user, role_required
 
 kb_bp = Blueprint("kb", __name__)
 

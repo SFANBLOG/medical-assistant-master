@@ -220,12 +220,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Monitor } from '@element-plus/icons-vue'
-import { chatApi, kbApi, chatStreamUrl, agentStreamUrl, authHeaders } from '@/api'
-import type { Conversation, Message, KnowledgeBase } from '@/types'
-import { useAuthStore } from '@/stores/auth'
+import {computed, nextTick, onBeforeUnmount, onMounted, reactive, ref} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {Monitor} from '@element-plus/icons-vue'
+import {agentStreamUrl, authHeaders, chatApi, chatStreamUrl, kbApi} from '@/api'
+import type {Conversation, KnowledgeBase, Message} from '@/types'
+import {useAuthStore} from '@/stores/auth'
 import ChatMessage from '@/components/ChatMessage.vue'
 
 const auth = useAuthStore()

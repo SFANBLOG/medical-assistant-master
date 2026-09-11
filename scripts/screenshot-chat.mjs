@@ -1,9 +1,9 @@
 /**
  * 截图：聊天页带完整 AI 回答（新提问并等待）
  */
-import { createRequire } from 'module'
+import {createRequire} from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import {fileURLToPath} from 'url'
 
 const require = createRequire(import.meta.url)
 const puppeteer = require('puppeteer-core')

@@ -7,9 +7,8 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Optional
 
-from backend import config
 from backend.config import DB_TYPE, DATABASE_NAME, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, SQLITE_PATH
 
 try:
