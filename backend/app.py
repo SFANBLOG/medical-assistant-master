@@ -4,7 +4,15 @@
 启动后自动建库建表 + 播种演示数据。
 运行: python -m backend  （从项目根目录执行）→  http://127.0.0.1:8010
 """
-from flask import Flask
+import os
+import sys
+
+# 确保项目根目录在 sys.path：PocketBay 等平台可能以 backend/ 为工作目录启动
+# gunicorn（入口 backend.app:app），此时 `backend` 包所在的父目录不在模块搜索路径，
+# 显式把父目录加入即可正常导入（与 CWD 无关，提升可移植性）。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from flask import Flask, redirect
 from flask_cors import CORS
 
 from backend import config
@@ -47,6 +55,12 @@ def create_app() -> Flask:
     def health():
         return {"status": "ok", "db_type": DB_TYPE}
 
+    # 根路径：PocketBay 等平台把 `/` 转发给后端，而前端 SPA 静态资源在
+    # /index.html（hash 路由，无服务端 fallback 需求）。重定向即可直达前端。
+    @app.route("/")
+    def index():
+        return redirect("/index.html")
+
     # 向量库状态
     @app.route("/api/vector/status")
     def vector_status():
@@ -62,8 +76,16 @@ def create_app() -> Flask:
     return app
 
 
+_DB_READY = False
+
+
 def init_database():
-    """初始化数据库：建库 + 建表 + 播种。"""
+    """初始化数据库：建库 + 建表 + 播种（幂等，可被多次安全调用）。"""
+    global _DB_READY
+    if _DB_READY:
+        return
+    _DB_READY = True
+
     print("=" * 60)
     print("  医智助手 · 后端启动")
     print("=" * 60)
@@ -129,3 +151,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+else:
+    # WSGI 模块级入口：供 gunicorn backend.app:app（PocketBay 等 PaaS）直接加载。
+    # 直接运行 python -m backend 时走 main()，不会重复初始化；
+    # wsgi.py 复用同一 app 实例（见下），init_database 幂等也不会重复建库。
+    init_database()
+    app = create_app()

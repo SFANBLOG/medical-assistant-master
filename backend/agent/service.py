@@ -6,7 +6,10 @@ from typing import Generator
 
 from backend.agent.orchestrator import run_agent
 from backend.rag.llm import _clean_answer_text
-from backend.utils.db import execute, fetchone, fetchall
+from backend.utils.db import execute, fetchone, fetchall, DB_TYPE
+
+# 跨数据库「当前时间」表达式：MySQL 用 NOW()，SQLite 用 datetime('now','localtime')
+_NOW_SQL = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
 
 
 def _sse(event: dict) -> str:
@@ -42,7 +45,7 @@ def agent_stream_sse(
     # 首次提问：自动用问题首句更新会话标题
     new_title = question.strip()[:60] or "新对话"
     execute(
-        "UPDATE conversations SET title = %s, updated_at = NOW() "
+        "UPDATE conversations SET title = %s, updated_at = " + _NOW_SQL + " "
         "WHERE id = %s AND (title IS NULL OR title = '' OR title = '新对话')",
         (new_title, conv_id),
     )

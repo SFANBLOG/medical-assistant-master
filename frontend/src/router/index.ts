@@ -2,7 +2,7 @@
  * 路由定义 + 角色守卫
  */
 import type {RouteRecordRaw} from 'vue-router'
-import {createRouter, createWebHistory} from 'vue-router'
+import {createRouter, createWebHashHistory} from 'vue-router'
 import {useAuthStore} from '@/stores/auth'
 import MainLayout from '@/layouts/MainLayout.vue'
 
@@ -122,7 +122,9 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // hash 模式：PocketBay 等 PaaS 静态托管无 history fallback，
+  // history 模式刷新深链（如 /login、/dashboard）会 404，hash 模式不依赖服务端。
+  history: createWebHashHistory(),
   routes,
 })
 

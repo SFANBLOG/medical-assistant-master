@@ -6,7 +6,11 @@ from typing import Generator
 
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend.rag.retriever import retrieve, build_context
-from backend.utils.db import fetchone, fetchall, execute
+from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
+
+# 跨数据库「当前时间」表达式：MySQL 用 NOW()，SQLite 无 NOW()，会直接抛
+# OperationalError 导致提问接口 500（云端 SQLite 环境踩坑），故按库类型切换。
+_NOW_SQL = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
 
 
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
@@ -116,7 +120,7 @@ def chat_stream_sse(
     # 便于在会话列表中区分不同对话（同时兼容历史遗留的默认标题）。
     new_title = question.strip()[:60] or "新对话"
     execute(
-        "UPDATE conversations SET title = %s, updated_at = NOW() "
+        "UPDATE conversations SET title = %s, updated_at = " + _NOW_SQL + " "
         "WHERE id = %s AND (title IS NULL OR title = '' OR title = '新对话')",
         (new_title, conv_id),
     )

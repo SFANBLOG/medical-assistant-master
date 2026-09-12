@@ -139,3 +139,6 @@ scripts/.expand_state.json
 
 # 向量库本地持久化缓存（运行时按需重建，不入库）
 backend/data/numpy_store.pkl
+
+.pocketbay_deploy.sh
+backend/data/*.db
