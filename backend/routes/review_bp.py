@@ -15,15 +15,16 @@ import json
 from flask import Blueprint, request, jsonify
 
 from backend.services import audit_service
-from backend.utils.db import fetchone, fetchall, execute, DB_TYPE
+from backend.utils.db import fetchone, fetchall, execute, DB_TYPE, NOW_SQL
 from backend.utils.jwt_utils import current_user, role_required
 
 review_bp = Blueprint("review", __name__)
 
 REVIEWER_ROLES = ("doctor", "admin")
 
-# 跨数据库「当前时间」表达式：MySQL 用 NOW()，SQLite 用 datetime('now','localtime')
-_NOW_SQL = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
+# 跨数据库「当前时间」表达式：统一取自 backend.utils.db.NOW_SQL
+# （MySQL 用 NOW()，SQLite 用 datetime('now','localtime')）
+_NOW_SQL = NOW_SQL
 
 
 def _ph() -> str:

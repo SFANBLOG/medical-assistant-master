@@ -77,9 +77,11 @@ class Supervisor:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.1,
-            "max_tokens": 100,
+            # 意图分类输出很短，但推理型模型的思考过程也计入 token，
+            # 因此不能压到 100 这种量级，否则只会返回空 content。
+            "max_tokens": max(1024, config.LLM_MAX_TOKENS // 4),
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        resp = requests.post(url, headers=headers, json=payload, timeout=min(60, config.LLM_TIMEOUT))
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"].get("content", "").strip()

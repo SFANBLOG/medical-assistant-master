@@ -11,6 +11,11 @@ from typing import Optional
 
 from backend.config import DB_TYPE, DATABASE_NAME, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, SQLITE_PATH
 
+# 跨数据库「当前时间」表达式。SQL 里禁止裸写 NOW()：
+# MySQL 支持 NOW()，SQLite 没有该函数（会抛 "no such function: NOW"）。
+# 统一从这里取，作为字符串拼进 SQL。
+NOW_SQL = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
+
 try:
     import pymysql
     import pymysql.cursors
@@ -212,46 +217,51 @@ def _column_exists(table: str, column: str) -> bool:
             return False
 
 
+def _review_col_types(is_mysql: bool) -> list[tuple[str, str]]:
+    """复核字段的 (列名, 列类型)。INT UNSIGNED 是 MySQL 专有，SQLite 用 INTEGER。"""
+    id_type = "INT UNSIGNED NULL" if is_mysql else "INTEGER NULL"
+    return [
+        ("reviewer_id", id_type),
+        ("reviewed_at", "DATETIME NULL"),
+        ("review_note", "VARCHAR(512) NULL"),
+    ]
+
+
 def _run_hitl_migrations():
     """
     HITL（人工复核）相关字段的增量迁移。
 
     旧数据库可能没有 review_status / reviewer_id / reviewed_at / review_note 字段，
     这里通过 ALTER TABLE 安全补全，并把历史数据默认标记为 approved，避免检索/复核功能 500。
+
+    注意：ALTER 的列类型里 COMMENT / INT UNSIGNED 是 MySQL 专有语法，SQLite 会直接报
+    syntax error，因此按 DB_TYPE 分别生成（见 _review_col_types / _add_col_comment）。
     """
-    now_sql = "NOW()" if DB_TYPE == "mysql" else "datetime('now','localtime')"
+    is_mysql = DB_TYPE == "mysql"
 
     # ---- documents 表 ----
     if not _column_exists("documents", "review_status"):
         execute(
-            f"ALTER TABLE documents ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved' "
-            f"COMMENT 'pending/approved/rejected（人工复核）'"
+            "ALTER TABLE documents ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved'"
+            + (" COMMENT 'pending/approved/rejected（人工复核）'" if is_mysql else "")
         )
-        execute(f"UPDATE documents SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
+        execute("UPDATE documents SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
         print("[DB] documents.review_status 迁移完成")
 
-    for col, typ in [
-        ("reviewer_id", "INT UNSIGNED NULL"),
-        ("reviewed_at", "DATETIME NULL"),
-        ("review_note", "VARCHAR(512) NULL"),
-    ]:
+    for col, typ in _review_col_types(is_mysql):
         if not _column_exists("documents", col):
             execute(f"ALTER TABLE documents ADD COLUMN {col} {typ}")
 
     # ---- messages 表 ----
     if not _column_exists("messages", "review_status"):
         execute(
-            f"ALTER TABLE messages ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved' "
-            f"COMMENT 'pending/approved/rejected（人工复核）'"
+            "ALTER TABLE messages ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'approved'"
+            + (" COMMENT 'pending/approved/rejected（人工复核）'" if is_mysql else "")
         )
-        execute(f"UPDATE messages SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
+        execute("UPDATE messages SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''")
         print("[DB] messages.review_status 迁移完成")
 
-    for col, typ in [
-        ("reviewer_id", "INT UNSIGNED NULL"),
-        ("reviewed_at", "DATETIME NULL"),
-        ("review_note", "VARCHAR(512) NULL"),
-    ]:
+    for col, typ in _review_col_types(is_mysql):
         if not _column_exists("messages", col):
             execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")
 

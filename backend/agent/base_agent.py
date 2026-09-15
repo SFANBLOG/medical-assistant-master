@@ -132,9 +132,9 @@ class BaseAgent(ABC):
                 "tools": tool_schemas,
                 "tool_choice": "auto",
                 "temperature": 0.3,
-                "max_tokens": 1024,
+                "max_tokens": config.LLM_MAX_TOKENS,
             }
-            resp = requests.post(url, headers=headers, json=payload, timeout=25)
+            resp = requests.post(url, headers=headers, json=payload, timeout=config.LLM_TIMEOUT)
             if resp.status_code != 200:
                 raise RuntimeError(f"API 返回 {resp.status_code}: {resp.text[:200]}")
             data = resp.json()

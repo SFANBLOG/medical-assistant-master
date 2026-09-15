@@ -17,7 +17,9 @@ BGE 模型导致内存翻倍。
 """
 import os
 
-bind = "0.0.0.0:8010"
+# 监听端口：优先读平台注入的 PORT（PocketBay 等托管平台会指定 PORT 并要求绑定 0.0.0.0），
+# 未设置时回落到后端默认端口 8010（本地 compose / 直跑 gunicorn 行为不变）。
+bind = f"0.0.0.0:{os.getenv('PORT') or os.getenv('BACKEND_PORT') or '8010'}"
 workers = int(os.getenv("GUNICORN_WORKERS", "4"))
 threads = int(os.getenv("GUNICORN_THREADS", "2"))
 # SSE 流式回答预留充足时长：默认 120s 可能在 LLM 生成长回答时掐断流

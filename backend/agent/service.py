@@ -6,7 +6,7 @@ from typing import Generator
 
 from backend.agent.orchestrator import run_agent
 from backend.rag.llm import _clean_answer_text
-from backend.utils.db import execute, fetchone, fetchall
+from backend.utils.db import execute, fetchone, fetchall, NOW_SQL
 
 
 def _sse(event: dict) -> str:
@@ -39,10 +39,10 @@ def agent_stream_sse(
         "INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'user', %s)",
         (conv_id, question),
     )
-    # 首次提问：自动用问题首句更新会话标题
+    # 首次提问：自动用问题首句更新会话标题（updated_at 走 NOW_SQL，兼容 SQLite）
     new_title = question.strip()[:60] or "新对话"
     execute(
-        "UPDATE conversations SET title = %s, updated_at = NOW() "
+        f"UPDATE conversations SET title = %s, updated_at = {NOW_SQL} "
         "WHERE id = %s AND (title IS NULL OR title = '' OR title = '新对话')",
         (new_title, conv_id),
     )

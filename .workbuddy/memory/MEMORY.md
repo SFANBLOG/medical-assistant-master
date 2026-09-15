@@ -47,7 +47,7 @@
 
 ## 数据规模 / 演示账号
 - 12 个疾病知识库（公开）+ 医生私有库（我的临床笔记/疑难病例讨论/用药经验总结/手术记录集/科研文献整理）+ 平台公共私有库 + admin 私有库。
-- 文档实际数量 **241 篇**（`backend/data/uploads/<知识库>/公开|私有/`，公开 121 / 私有 120），不是 240 也不是 242。
+- 文档实际数量 **481 篇**（`backend/data/uploads/<知识库>/公开|私有/`，9/8 经 DeepSeek 扩写到 avg 2500 字）。注意：早期 241 篇口径已过时。
 - 演示账号 patientdemo/doctordemo/nursedemo/publicdemo/admindemo，密码统一 `demo123`；另有 doctor01~16、nurse01~08、patient01~30、public01~05。
 
 ## 文档现状
@@ -65,3 +65,61 @@
 ## 删除 = 逻辑删除（2026-09-08 约定）
 - `DELETE /api/kb/<id>`（`delete_knowledge_base`）与 `DELETE /api/kb/documents/<doc_id>`（`delete_document`）**只删向量 + DB 记录，绝不删 `backend/data/uploads/` 磁盘目录/文件**（用户铁律：前端删文档/知识库不得动本地磁盘源文件，便于重新导入与溯源）。
 - 修改点：`backend/services/kb_service.py` 移除 `shutil.rmtree`/`file_path.unlink()` 两段，`import shutil` 已删。
+
+## PocketBay 部署协议（2026-09-08 已上线 ✅）
+- **部署目标**：https://medical-assistant-204c.pocketbay.app（slug `medical-assistant-204c`，最新 deployment **7667**，status running）
+- **平台运行时约束**：
+  - 仅支持 **SQLite + NumpyStore**，无 MySQL、无 Milvus、无 Redis
+  - 入口自动检测 `gunicorn app:app`（cwd=/app/backend），需 sys.path 注入项目根
+  - gunicorn bind 须读 `PORT`/`BACKEND_PORT` 环境变量（平台只健康检查 8080）
+  - 部署后实例 **autosleep**：HTTP 唤醒只返 204；真实唤醒靠 `agent-browser` 点顶层
+    `button "唤醒并继续"`（注意该按钮在 PocketBay 外壳上，**不在 iframe 内**，
+    所以 `find text` 能直接点到）
+  - **实例休眠窗口极短**：唤醒/登录/提问必须在**同一次 Bash 调用内连续完成**，跨调用必重新入睡
+  - **最稳的线上验证路径**：浏览器只负责「点唤醒」，随后立刻用
+    `C:\Users\23187\pb_tmp\pb_e2e_http3.py` 跑 HTTP E2E（确定性、快、证据完整）
+- **跨库兼容铁律**：
+  - `backend/utils/db.py` 模块级导出 `NOW_SQL = "NOW()" if DB_TYPE=="mysql" else "datetime('now','localtime')"`
+  - 所有 `SQL UPDATE ... updated_at` 必须用 f-string `{NOW_SQL}`，**禁止裸写 `NOW()`**（chat_service.py / agent/service.py / review_bp.py / db.py 都已统一）
+  - 表迁移里 `INT UNSIGNED` + `COMMENT` 是 MySQL 专属 → SQLite 走 `INTEGER NULL`，无 COMMENT
+- **打包脚本** `scripts/pack_pocketbay.py`：
+  - 排除 `backend/data/ai_models`（4.7GB 模型权重，容器无 torch）/venv/.git/local *.db/numpy_store.pkl
+  - 白名单仅 `backend/.env` 为 sensitive config；其他 secret 拒收并 `sys.exit(2)`
+  - 打包时**生成 platform 专用 .env** 注入 `DB_TYPE=sqlite` / `MILVUS_ENABLE=0`、剥 `MYSQL_*`/`MILVUS_HOST`/`MILVUS_PORT`，不动本地 `backend/.env`
+- **凭据**：`~/.pocketbay/credentials.json` 结构 = `{"https://pocketbay.com": {"_device": {"token": "pb_...", "label": "..."}}}`
+- **API host**：`https://pocketbay.com/api/ai/...`（**非** `api.pocketbay.com`，后者会 308 到前端）
+- **Cloudflare 拦截**：裸 `urllib` → 403 error code 1010，必须 `User-Agent: Mozilla/5.0 Chrome/120`
+- **E2E 验证脚本** `C:\Users\23187\pb_tmp\pb_e2e_http3.py`：health→login→new_conv→POST /api/chat/stream/<id> SSE 流式，验证零 500
+- **演示账号**：patientdemo/doctordemo/nursedemo/publicdemo/admindemo（密码 demo123）已部署可用
+
+## 知识库扩写 + 重建向量（2026-09-08 11:45）
+- 481 篇 md 经 DeepSeek 扩写到平均 2500 字（min 1069 / max 4028），断点续跑 + 结构校验
+- 修复 `NumpyStore.insert_batch()` 不支持 `flush` 关键字（numpy 兜底模式 seed/reindex 之前全灭）
+- ⚠️ 重建向量前必须确认运行时向量后端（milvus vs numpy），否则数据落错后端
+- `numpy_store.pkl` 已 `.gitignore`，Milvus 是权威向量库
+
+## LLM 网关配置（2026-09-12 换为传智 tokenhub）
+- **线上/本地统一**：`LLM_BASE_URL=https://tokenhub.itcast.cn/v1`，`LLM_CHAT_MODEL=deepseek-v4-flash`
+- **双命名兼容**：`config.py` 同时认 `LLM_*`（canonical）与 `OPENAI_*`（历史别名），
+  解析优先级 = **真实环境完整对 > .env 完整对 > 真实环境半套 > .env 半套 > 默认 LLM_**。
+  实现要点：必须在 `load_dotenv` **之前** 快照 `_ENV_SNAPSHOT`，否则 .env 合并进
+  `os.environ` 后分不清来源，平台面板配置会被静默忽略。
+- **铁律**：BASE_URL / API_KEY / CHAT_MODEL 必须**同一前缀成对**，禁止跨前缀混搭。
+  历史事故：面板里换了新 key 但 base_url 仍是 .env 里的旧网关 → 新 key 打到旧网关 → 401。
+- `LLM_MAX_TOKENS=4096` / `LLM_TIMEOUT=180`：**推理型模型思考过程也计入 token**，
+  预算给小了会「只思考、不回答」（supervisor 原来的 100 必然踩坑）。
+- **诊断端点** `GET /api/llm/status`：返回 base_url / chat_model / 掩码 key / online_mode，排 401 先看它。
+- tokenhub 实测：仅 `deepseek-v4-flash` 有额度（pro / qwen-* 全 429）；
+  先吐 `reasoning_content` 再吐 `content`；**支持 function calling**。
+- 验证脚本：`scripts/verify_llm_prefix.py`（前缀决策 4 用例）、`scripts/verify_llm_config.py`（真实网关流式）。
+
+## agent-browser 使用铁律（2026-09-12 踩坑沉淀）
+- **`open <url>` 会卡死守护进程**：页面挂着休眠实例时 load 事件长期不触发，
+  命令挂 8~17 分钟，之后所有命令超时 `os error 10060`。
+  → 改用 `open`（about:blank）+ `eval "location.href='<url>'"`，eval 不等 load。
+- **`find <locator>` 不穿透 iframe，`snapshot` 会**。PocketBay 应用在
+  `Iframe "Application"` 内 → 登录表单等必须「先 snapshot 拿 ref → 再操作 `@eN`」。
+- **ref 跨命令/跨进程不可靠** → 脚本里用 grep 从 snapshot 输出**动态解析 ref**。
+- **截图路径必须 Windows 格式**（`C:/...`），MSYS 的 `/c/...` 报 `os error 3`。
+- 守护进程卡死恢复：删 `~/.agent-browser/default.*` + `taskkill /F /IM agent-browser-win32-x64.exe`；
+  清遗留 Chromium 必须按命令行含 `*agent-browser-chrome*` 精确匹配，**勿误杀用户自己的 Chrome**。

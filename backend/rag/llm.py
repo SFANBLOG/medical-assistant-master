@@ -99,6 +99,58 @@ def chat_stream(
         yield from _chat_offline(question, context, history)
 
 
+def _mask_key(key: str) -> str:
+    """掩码 API Key，仅保留末 4 位，便于在日志/界面中定位是哪一个 key。"""
+    if not key:
+        return "(未配置)"
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:6]}****{key[-4:]}"
+
+
+def _diagnose_http_error(status: int, body: str) -> str:
+    """把网关错误翻译成可自我诊断的中文提示（不回显原始 JSON 堆在回答里）。"""
+    gw = config.OPENAI_BASE_URL
+    model = config.OPENAI_CHAT_MODEL
+    key = _mask_key(config.OPENAI_API_KEY)
+    # 上游原始 message（如 "Authentication Fails, Your api key: ****9129 is invalid"）
+    detail = ""
+    try:
+        obj = json.loads(body)
+        err = obj.get("error")
+        if isinstance(err, dict):
+            detail = str(err.get("message") or err.get("code") or "")
+        elif err:
+            detail = str(err)
+        elif obj.get("message"):
+            detail = str(obj["message"])
+    except (json.JSONDecodeError, TypeError):
+        detail = body[:200]
+
+    if status in (401, 403):
+        head = f"大模型网关鉴权失败（HTTP {status}）。"
+        advice = (
+            "请检查 LLM_API_KEY 与 LLM_BASE_URL 是否属于同一网关——"
+            "密钥与网关地址必须配套，换 key 时最容易出现「新 key 配旧地址」。"
+        )
+    elif status == 429:
+        head = f"大模型网关额度或频率受限（HTTP {status}）。"
+        advice = "当前密钥额度可能已用尽，请更换密钥或稍后重试。"
+    elif status >= 500:
+        head = f"大模型网关服务异常（HTTP {status}）。"
+        advice = "属于上游临时故障，可稍后重试。"
+    else:
+        head = f"大模型网关返回异常状态（HTTP {status}）。"
+        advice = "请核对模型名称与网关配置。"
+
+    return (
+        f"{head}\n"
+        f"当前配置：网关 {gw} ｜ 模型 {model} ｜ 密钥 {key}\n"
+        f"上游信息：{detail}\n"
+        f"{advice}\n\n"
+    )
+
+
 def _chat_stream_api(
     question: str,
     context: str,
@@ -115,15 +167,19 @@ def _chat_stream_api(
         "model": config.OPENAI_CHAT_MODEL,
         "messages": messages,
         "stream": True,
-        "max_tokens": 2048,
+        # 推理型模型（如 deepseek-v4-flash）会先输出 reasoning_content，
+        # 需要给正文留足 token 余量，否则会出现「只有思考、没有回答」。
+        "max_tokens": config.LLM_MAX_TOKENS,
         "temperature": 0.7,
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=60)
+        resp = requests.post(
+            url, headers=headers, json=payload, stream=True,
+            timeout=(10, config.LLM_TIMEOUT),
+        )
         if resp.status_code != 200:
-            err = resp.text[:500]
-            yield _sse({"error": f"API 返回 {resp.status_code}: {err}"})
+            yield _sse({"error": _diagnose_http_error(resp.status_code, resp.text)})
             yield from _chat_offline(question, context, history)
             return
 
@@ -161,13 +217,38 @@ def _chat_stream_api(
         if len(final_clean) > len(clean_buffer):
             yield _sse({"content": final_clean[len(clean_buffer):]})
 
+        # 推理型模型可能出现「思考耗尽 token、正文为空」的情况：显式兜底，
+        # 避免前端收到 done 却什么也没有，体验上像是卡死。
+        if not final_clean:
+            yield _sse({
+                "error": (
+                    f"大模型本次未返回正文内容（推理过程占满了 token 上限）。"
+                    f"当前模型 {config.OPENAI_CHAT_MODEL}，已自动改用知识库原文为您作答。\n\n"
+                )
+            })
+            yield from _chat_offline(question, context, history)
+            return
+
         yield _sse({"done": True})
 
     except requests.exceptions.ConnectionError:
-        yield _sse({"error": "无法连接到大模型 API，使用离线兜底回答"})
+        yield _sse({
+            "error": (
+                f"无法连接到大模型网关（{config.OPENAI_BASE_URL}），"
+                "已改用知识库原文为您作答。请检查网络或网关地址。\n\n"
+            )
+        })
+        yield from _chat_offline(question, context, history)
+    except requests.exceptions.Timeout:
+        yield _sse({
+            "error": (
+                f"大模型网关响应超时（{config.OPENAI_BASE_URL}），"
+                "已改用知识库原文为您作答。\n\n"
+            )
+        })
         yield from _chat_offline(question, context, history)
     except Exception as e:
-        yield _sse({"error": f"调用大模型异常: {str(e)}"})
+        yield _sse({"error": f"调用大模型异常：{str(e)}。已改用知识库原文为您作答。\n\n"})
         yield from _chat_offline(question, context, history)
 
 

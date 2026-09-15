@@ -4,6 +4,19 @@
 启动后自动建库建表 + 播种演示数据。
 运行: python -m backend  （从项目根目录执行）→  http://127.0.0.1:8010
 """
+import os
+import sys
+
+# 兼容不同的启动工作目录：
+#   1) 仓库根为 cwd —— python -m backend / gunicorn --chdir . wsgi:app
+#   2) backend/ 为 cwd —— 平台自动生成的启动命令（容器 WORKDIR=/app/backend，
+#      以 `gunicorn app:app` 直接加载本模块）此时仓库根不在 sys.path 上，
+#      `from backend import xxx` 会抛 ModuleNotFoundError: No module named 'backend'。
+# 这里显式把仓库根加入 sys.path，两种方式都能正常导入包。
+_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+
 from flask import Flask
 from flask_cors import CORS
 
@@ -46,6 +59,23 @@ def create_app() -> Flask:
     @app.route("/api/health")
     def health():
         return {"status": "ok", "db_type": DB_TYPE}
+
+    # 大模型配置自检：只暴露网关地址、掩码密钥、模型名，绝不回显完整密钥。
+    # 用于快速定位「新 key 配旧网关」这类 401 事故。
+    @app.route("/api/llm/status")
+    def llm_status():
+        key = config.OPENAI_API_KEY or ""
+        masked = "(未配置)" if not key else (
+            "****" if len(key) <= 8 else f"{key[:6]}****{key[-4:]}"
+        )
+        return {
+            "base_url": config.OPENAI_BASE_URL,
+            "chat_model": config.OPENAI_CHAT_MODEL,
+            "api_key_masked": masked,
+            "api_key_length": len(key),
+            "online_mode": bool(key and key != "sk-xxx"),
+            "embed_model": config.OPENAI_EMBED_MODEL or "hash (builtin)",
+        }
 
     # 向量库状态
     @app.route("/api/vector/status")
@@ -125,6 +155,18 @@ def main():
         use_reloader=config.FLASK_USE_RELOADER,
         threaded=True,
     )
+
+
+# 兼容平台以 `gunicorn app:app`（cwd=backend/）直接加载本模块的启动方式：
+# 此时模块顶层名为 "app"，不会经过 wsgi.py，需要在此补齐 wsgi.py 里的初始化
+# （建库建表 + 播种演示数据），否则进程能起但数据库为空（无演示账号 / 无知识库）。
+# 通过 wsgi.py 或 `python -m backend` 导入时 __name__ 分别为 "backend.app"，
+# 不会重复初始化。
+if __name__ == "app":
+    init_database()
+
+# 模块级 WSGI callable：供 gunicorn `app:app` 直接引用
+app = create_app()
 
 
 if __name__ == "__main__":

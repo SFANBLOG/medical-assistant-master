@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BACKEND_DIR.parent
 
+# 在 load_dotenv 之前快照「进程真实环境变量」。
+# 部署平台（PocketBay 等）注入的变量只存在于真实环境，必须先抓取，
+# 否则会被 .env 合并进 os.environ 后无法区分来源，导致面板配置被静默忽略。
+_ENV_SNAPSHOT = dict(os.environ)
+
 # 加载 .env（优先 backend/.env，其次 项目根/.env）
 _env_backend = BACKEND_DIR / ".env"
 _env_root = PROJECT_DIR / ".env"
@@ -34,10 +39,58 @@ MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
 MILVUS_CONNECT_TIMEOUT = int(os.getenv("MILVUS_CONNECT_TIMEOUT", "3"))
 
 # ---- 聊天 / 向量化 ----
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "deepseek-chat")
-OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "auto")
+# 同时兼容两套命名：LLM_*（本项目 canonical）与 OPENAI_*（历史命名）。
+#
+# 前缀决策优先级（绝不跨前缀混搭 base_url 与 api_key）：
+#   1) 真实环境变量里存在「成对齐全」的 LLM_* / OPENAI_*  → 采用（平台面板覆盖生效）
+#   2) 否则用合并 .env 后「成对齐全」的一套                 → 采用（打包进镜像的配置）
+#   3) 再退到「只填了半套」的真实环境变量                   → 采用
+#   4) 都没有 → 默认 LLM_
+#
+# 历史事故：面板里只新填了 key、没填 BASE_URL，结果「新 key 打到 .env 里的旧网关」
+# → 必然 401 authentication_error。把「半套」排在「完整对」之后，
+# 可以保证残缺的覆盖不会破坏 .env 里已配套的网关配置。
+
+
+def _complete_prefix(env: dict) -> str:
+    """返回「BASE_URL + API_KEY 成对齐全」的前缀，没有则返回空串。"""
+    for prefix in ("LLM_", "OPENAI_"):
+        if env.get(prefix + "BASE_URL") and env.get(prefix + "API_KEY"):
+            return prefix
+    return ""
+
+
+def _any_prefix(env: dict) -> str:
+    """返回「至少填了一项」的前缀，没有则返回空串。"""
+    for prefix in ("LLM_", "OPENAI_"):
+        if env.get(prefix + "BASE_URL") or env.get(prefix + "API_KEY"):
+            return prefix
+    return ""
+
+
+LLM_CONFIG_SOURCE = "env" if _complete_prefix(_ENV_SNAPSHOT) else "dotenv"
+_LLM_PREFIX = (
+    _complete_prefix(_ENV_SNAPSHOT)     # ① 平台完整覆盖
+    or _complete_prefix(os.environ)     # ② .env 文件完整配置
+    or _any_prefix(_ENV_SNAPSHOT)       # ③ 平台半套覆盖（聊胜于无）
+    or _any_prefix(os.environ)          # ④ .env 半套
+    or "LLM_"                           # ⑤ 兜底默认
+)
+
+LLM_BASE_URL = os.getenv(_LLM_PREFIX + "BASE_URL") or "https://api.deepseek.com/v1"
+LLM_API_KEY = os.getenv(_LLM_PREFIX + "API_KEY") or ""
+LLM_CHAT_MODEL = os.getenv(_LLM_PREFIX + "CHAT_MODEL") or "deepseek-chat"
+
+# 历史别名（向后兼容既有代码 import）
+OPENAI_BASE_URL = LLM_BASE_URL
+OPENAI_API_KEY = LLM_API_KEY
+OPENAI_CHAT_MODEL = LLM_CHAT_MODEL
+OPENAI_EMBED_MODEL = os.getenv("LLM_EMBED_MODEL") or os.getenv("OPENAI_EMBED_MODEL", "auto")
+
+# 单次补全预算。推理型模型（deepseek-v4-flash 等）的思考过程同样计入 token，
+# 预算过小会出现「只思考、不回答」，所以默认给足。
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "180"))
 # 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 BGE 模型（优先 bge-small-zh-v1.5）；
 # 设为具体路径或 HuggingFace repo_id 可覆盖自动检测。
 
@@ -103,7 +156,8 @@ FLASK_USE_RELOADER = os.getenv("FLASK_USE_RELOADER", "0").lower() in ("1", "true
 
 # ---- JWT ----
 JWT_SECRET = os.getenv("JWT_SECRET", "medical-assistant-secret-key-2024")
-JWT_EXP_HOURS = 24
+# 兼容旧命名 JWT_EXPIRES_HOURS（.env.example 里曾用过）
+JWT_EXP_HOURS = int(os.getenv("JWT_EXP_HOURS") or os.getenv("JWT_EXPIRES_HOURS") or "24")
 
 # ---- 路径 ----
 DATA_DIR = BACKEND_DIR / "data"

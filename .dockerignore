@@ -10,14 +10,16 @@ backend/logs
 backend/data/*.db
 backend/data/numpy_store.pkl
 
-# ⚠️ 本地向量模型目录（约 1.4GB，HF 缓存格式，含未下完的 .tmp_bge-reranker-base）。
+# ⚠️ 本地向量模型目录（约 4.7GB，HF 缓存格式，含未下完的 .tmp_*）。
 # 容器默认未安装 sentence-transformers / torch，打进去只会让构建慢几十分钟、
 # 镜像膨胀数 GB 且仍然加载失败。默认使用内置确定性哈希向量（零依赖、离线可用）。
 # 需要容器内真实 BGE 语义向量时：
 #   1) docker compose build --build-arg INSTALL_LOCAL_EMBED=true backend
-#   2) 在 compose backend 服务加挂 - ./backend/data/models:/app/backend/data/models
-#   3) 设 OPENAI_EMBED_MODEL=/app/backend/data/models/<模型目录>
+#   2) 在 compose backend 服务加挂模型目录
+#   3) 设 OPENAI_EMBED_MODEL=/app/backend/data/ai_models/<模型目录>
+# 注意目录名已从 data/models 改为 data/ai_models（config.MODEL_DIR），两个都排除。
 backend/data/models
+backend/data/ai_models
 
 # ⚠️ 只排除项目根目录的说明文档，绝对不要写成 *.md：
 #    backend/data/uploads 下 241 篇知识库文档全部是 .md，用 *.md 会把整个知识库
