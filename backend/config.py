@@ -24,15 +24,15 @@ if _env_root.exists():
     load_dotenv(_env_root, override=False)
 
 # ---- 数据库 ----
-DB_TYPE = os.getenv("DB_TYPE", "mysql").lower()
-DATABASE_NAME = os.getenv("DATABASE_NAME", "medical-assistant-master")
+DB_TYPE = os.getenv("DB_TYPE", "sqlite").lower()
+DATABASE_NAME = os.getenv("DATABASE_NAME", "medical-assistant")
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "123456")
 
 # ---- 向量库（Milvus）----
-MILVUS_ENABLE = os.getenv("MILVUS_ENABLE", "1") == "1"
+MILVUS_ENABLE = os.getenv("MILVUS_ENABLE", "0") == "1"
 MILVUS_HOST = os.getenv("MILVUS_HOST", "127.0.0.1")
 MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
 # 连接超时（秒）：本地未启动 Milvus 时快速失败并降级，避免阻塞启动。
@@ -143,7 +143,8 @@ RERANK_USE_CE = os.getenv("RERANK_USE_CE", "false").lower() in ("1", "true", "ye
 AGENT_MODE = os.getenv("AGENT_MODE", "v2").lower()
 
 # ---- 服务端口 ----
-BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8010"))
+# 优先读平台注入的 PORT（PocketBay 等平台约定），回退 BACKEND_PORT / 默认 8010
+BACKEND_PORT = int(os.getenv("PORT", os.getenv("BACKEND_PORT", "8010")))
 
 # ---- 本地 Flask 运行模式（仅 app.run 生效；Docker/gunicorn 走 wsgi 入口，不经这里）----
 # Windows 下 debug=True 会连带开启 watchdog 文件监视自动重载，对目录动静极敏感：

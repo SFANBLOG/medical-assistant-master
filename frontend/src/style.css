@@ -1,0 +1,8 @@
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #f5f7fa; color: #303133; }
+a { text-decoration: none; color: inherit; }
+.app-footer {
+  text-align: center; padding: 12px; color: #909399; font-size: 13px;
+  border-top: 1px solid #ebeef5; background: #fff;
+}

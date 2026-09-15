@@ -6,7 +6,7 @@ from typing import Generator
 
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend.rag.retriever import retrieve, build_context
-from backend.utils.db import fetchone, fetchall, execute, NOW_SQL
+from backend.utils.db import fetchone, fetchall, execute
 
 
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
@@ -114,10 +114,9 @@ def chat_stream_sse(
         )
     # 首次提问：若会话标题仍为默认「新对话」/空，则用问题首句自动更新标题，
     # 便于在会话列表中区分不同对话（同时兼容历史遗留的默认标题）。
-    # 注意：updated_at 必须走 NOW_SQL（SQLite 无 NOW() 函数）。
     new_title = question.strip()[:60] or "新对话"
     execute(
-        f"UPDATE conversations SET title = %s, updated_at = {NOW_SQL} "
+        "UPDATE conversations SET title = %s, updated_at = NOW() "
         "WHERE id = %s AND (title IS NULL OR title = '' OR title = '新对话')",
         (new_title, conv_id),
     )

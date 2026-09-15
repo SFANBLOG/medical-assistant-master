@@ -153,6 +153,11 @@
               >
                 {{ s }}
               </div>
+              <!-- 重试小按钮：不刷新页面就地换一批推荐问题 -->
+              <div class="suggestion suggestion-refresh" title="换一批推荐问题" @click="refreshSuggestions">
+                <el-icon :size="13"><Refresh /></el-icon>
+                换一批
+              </div>
             </div>
           </div>
           <!-- 会话加载中：点击会话后立即给出反馈，避免误以为“卡住” -->
@@ -222,7 +227,7 @@
 <script setup lang="ts">
 import {computed, nextTick, onBeforeUnmount, onMounted, reactive, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {Monitor} from '@element-plus/icons-vue'
+import {Monitor, Refresh} from '@element-plus/icons-vue'
 import {agentStreamUrl, authHeaders, chatApi, chatStreamUrl, kbApi} from '@/api'
 import type {Conversation, KnowledgeBase, Message} from '@/types'
 import {useAuthStore} from '@/stores/auth'
@@ -289,6 +294,16 @@ const SUGGESTION_POOL = [
 ]
 const suggestions = ref<string[]>([])
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  // Fisher–Yates 洗牌
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
 function pickSuggestions(): string[] {
   const lastKey = 'chat_last_suggestions'
   let lastSet: string[] = []
@@ -297,23 +312,24 @@ function pickSuggestions(): string[] {
   } catch {
     lastSet = []
   }
-  // 先排除上次已展示的问题；若剩余不足 6 个则重置池，避免可选过少
+  // 优先展示上次没出现过的问题；不足 6 个时从上次集合随机补齐
+  // （9 题池抽 6，剩余只有 3 个：全部重置会导致约 4 题重复，补齐策略重复约 3 题）
   let pool = SUGGESTION_POOL.filter((s) => !lastSet.includes(s))
   if (pool.length < 6) {
-    pool = [...SUGGESTION_POOL]
+    pool = [...pool, ...shuffle(lastSet).slice(0, 6 - pool.length)]
   }
-  // Fisher–Yates 洗牌后取前 6 个
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  const picked = pool.slice(0, 6)
+  const picked = shuffle(pool).slice(0, 6)
   try {
     sessionStorage.setItem(lastKey, JSON.stringify(picked))
   } catch {
     /* 部分隐私模式下 sessionStorage 不可用，忽略 */
   }
   return picked
+}
+
+/** 「换一批」按钮：就地重新抽取推荐问题（与刷新/重进同一套去重逻辑）。 */
+function refreshSuggestions() {
+  suggestions.value = pickSuggestions()
 }
 
 // 当前生效的 KB 名（含通用兜底/未选状态）
@@ -1032,6 +1048,22 @@ async function loadWeather() {
 }
 
 .suggestion:hover {
+  border-color: #409eff;
+  color: #409eff;
+  background: #ecf5ff;
+}
+
+/* 「换一批」重试小按钮：弱化为虚线边框，与问题 chip 区分 */
+.suggestion-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: dashed;
+  color: #909399;
+  background: transparent;
+}
+
+.suggestion-refresh:hover {
   border-color: #409eff;
   color: #409eff;
   background: #ecf5ff;
