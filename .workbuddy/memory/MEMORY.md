@@ -1,125 +1,89 @@
 # 项目长期记忆
 
 ## ⚠️ .git 安全铁律（2026-09-08 事故）
-- 对 `.git` 的任何高危操作（`git gc --prune=now`、`git filter-branch`、`rm -rf .git/<子项>`、`git reflog expire`）**必须先整体备份 `.git`**（如 `tar -cf` 或复制到 /tmp），且**不要与 rm/清理命令在同一条 shell 串联**。8-08 一次 gc+清理后 .git 元数据几乎全灭（仅剩 info/objects 空壳），靠远端 clone 重建，8/31~9/8 的 30 个提交历史丢失粒度（合并为单提交 3f4a354），内容零丢失。
-- 模型权重/大文件进 git 历史的教训：fetch_model 下载残留（`.tmp_*/...*.incomplete`，1.31GB）曾被误提交，Gitee 单文件 100MB 限制下推送必败，需 filter-branch 剔除。
-- 远端：`master` → `git@gitee.com:BLOGSFan/medical_assistant-master.git`（SSH 认证可用）。恢复方法：clone 远端 → 取其 .git 移入项目 → `git add -A` 单提交重建。
+- 对 `.git` 的高危操作（`git gc --prune=now`、`filter-branch`、`rm -rf .git/<子项>`、`reflog expire`）**必须先整体备份 `.git`**，且不可与 rm 串联在同一条 shell。8-08 一次 gc 后 .git 元数据几乎全灭，靠远端 clone 重建。
+- 大文件进 git 的教训：模型下载残留（1.31GB `.incomplete`）曾被误提交，Gitee 单文件 100MB 限制下推送必败。
+- 远端：`master` → `git@gitee.com:BLOGSFan/medical_assistant-master.git`（SSH 可用）。
 
-## 知识库现状（2026-09-08 更新）
-- 用户 9/6~9/8 重组知识库：`backend/data/uploads/` 现 **441 篇 md**（多疾病库 × 公开/私有 各 20 篇），旧 241 篇结构（含妇儿疾病库）已被替换删除。
-- 工作树已无 `nginx.conf`、`Dockerfile.backend/frontend`（用户删除并提交）；`docker-compose.yml` 仍在。
+## 架构要点（架构 A，唯一活跃运行时）
+- 入口 `backend/app.py`（**不是** `backend/app/main.py`）；`python -m backend`（根目录）或 `gunicorn wsgi:app`。端口 8010。
+- 用 `backend.config`（模块级）、`backend.routes.*`、`backend/utils/db.py`（MySQL/SQLite 按 `DB_TYPE` 切换）。
+- 蓝图 7 个：auth/chat/kb/medical/dashboard/agent/review，前缀 `/api/<name>`。
+- `backend/api/`（架构 B）是未接线死代码，勿以它为准。
+- 跨库铁律：`backend/utils/db.py` 导出 `NOW_SQL`，所有 `UPDATE ... updated_at` 必须用 f-string `{NOW_SQL}`，**禁止裸写 `NOW()`**；占位符用 `_placeholder()`（`%s` ↔ `?`）；`INT UNSIGNED`+`COMMENT` 是 MySQL 专属，SQLite 走 `INTEGER NULL`。
+- 依赖安装必用 `backend/requirements.txt`（根目录那份是 Anaconda 全量 pip freeze，不可用于安装）。
+- `backend/services/cache.py`（Redis）是死代码，勿引用。
 
-## 医智助手（medical_assistant）后端架构要点
-- 活跃运行时 = 「架构 A」：`python -m backend`（根目录执行）/`gunicorn wsgi:app` → **入口文件是 `backend/app.py`**（不是 `backend/app/main.py`），用 `backend.config`（模块级配置）、`backend.routes.*`、`backend/utils/db.py`（双库 MySQL/SQLite，按 `DB_TYPE` 切换）。端口 8010。
-- 蓝图共 7 个：auth/chat/kb/medical/dashboard/agent/review，前缀均为 `/api/<name>`。
-- `backend/api/`（架构 B）是未接线死代码，不要以它为准。
-- 跨库时间表达式统一用 `_NOW_SQL = "NOW()" if mysql else "datetime('now','localtime')"`，禁止裸写 `NOW()`；占位符用 `_placeholder()`（`%s` ↔ `?`）。
+## 知识库现状（2026-09-17 实测，此前 241/441/481 口径全部作废）
+- `backend/data/uploads/` = **12 个疾病库 ×(公开/私有)，共 150 篇 md**（公开 44 + 私有 106）。
+- 9/17 起批量扩写：目标 1000+ 字，统一 7 章节（疾病概述/常见症状/常见病因（诱因与危险因素）/诊断要点/一般处理与就医建议/注意事项/预防与日常管理）。
+- **已完成 48 篇，平均 2116 字**；剩余 102 篇因 LLM key 失效暂停。备份 `backend/data/uploads_backup_20260917_155236/`。
+- 工具链：
+  - `scripts/expand_docs.py` 扩写（并发 + 断点续跑 `.expand_progress.json` + 原子写 + 质量闸门字数≥900/章节齐备）
+  - `scripts/sync_docs_from_disk.py` **以磁盘为准重建 documents 映射**（预演/`--apply`）
+  - `scripts/reindex_vectors.py` 重建向量（要求 BGE，强制 `MILVUS_ENABLE=0`）
+  - `scripts/verify_retrieval.py` 检索验证（`retrieve(q, role, user_id, kb_id, top_k)` 需传 role/user_id）
+- ⚠️ **DB 与磁盘脱节是老大难**：知识库重组后 `documents.file_path` 仍指旧路径，9/17 实测 483 条记录只有 2 条能命中文件，向量库仅 4 chunk。同步后可检索 2 → **150 条**，重建后 **411 chunks（BGE-base-zh 768 维）**。
+- 删除=逻辑删除：`DELETE /api/kb/<id>` 与 `/api/kb/documents/<doc_id>` **只删向量+DB 记录，绝不删磁盘源文件**。
 
-## Agent 编排层（已落地，非设想）
-- `backend/agent/`：orchestrator.py（ReAct，在线最多 6 步 + 离线规则式降级）、tools.py（5 工具：search_knowledge / reverse_geocode / get_weather / query_hospitalizations / query_appointments）、service.py（SSE 封装）。
-- `agent_bp` 路由：`GET /api/agent/tools`、`POST /api/agent/stream/<conv_id>`。
-- SSE 事件协议：`thought` / `tool_call` / `observation` / `citations` / `message` / `done` / `error`。轨迹存 `messages.agent_steps`。
-- 前端已接线：`Chat.vue` 有「智能体模式」开关（`agentMode`），`ChatMessage.vue` 渲染可折叠思考时间线。
+## 环境事实（本机）
+- Anaconda python（`C:\huanjing\Anaconda\python.exe`）有 `sentence_transformers 5.6.1` + flask，可用于导入/集成测试与向量重建。
+- `backend/.venv` **没有** sentence_transformers → 会走 HashEmbedder（无语义）。
+- BGE 模型在 `backend/data/ai_models/`（4.7G，含 bge-base-zh-v1.5 + 2 个 reranker）。
+- 本地 MySQL(3306) 通、Milvus(19530) 通常不通 → 实际向量后端是 NumpyStore（`backend/data/numpy_store.pkl`）。
+- Ollama 已装但无模型（目录 14K），显卡 RTX 3050 Ti 4GB，不适合批量生成。
 
-## 依赖安装（坑）
-- **必须用 `backend/requirements.txt`**。根目录 `requirements.txt` 是本机 Anaconda 全量 `pip freeze` 产物（几百行、含本地 file:// 路径），不可用于安装。
-- `backend/services/cache.py`（Redis 缓存）是死代码：无任何模块 import，且首行 `from config import Config` 在架构 A 下必然 ImportError。不要引用它。
+## LLM 网关配置（传智 tokenhub）
+- **线上/本地统一**：`LLM_BASE_URL=https://tokenhub.itcast.cn/v1`，主力模型 `deepseek-v4-flash`。
+- **双命名兼容**：`config.py` 同时认 `LLM_*`（canonical）与 `OPENAI_*`（历史别名）。
+  解析优先级 = **真实环境完整对 > .env 完整对 > 真实环境半套 > .env 半套 > 默认**。
+  实现要点：必须在 `load_dotenv` **之前**快照 `_ENV_SNAPSHOT`，否则 .env 合并进 `os.environ` 后分不清来源，平台面板配置会被静默忽略。
+- **铁律**：BASE_URL / API_KEY / CHAT_MODEL 必须**同一前缀成对**，禁止跨前缀混搭。历史事故：换 key 但 base_url 仍是旧网关 → 401。
+- 聊天模型名优先级：`LLM_MODEL > LLM_CHAT_MODEL > OPENAI_CHAT_MODEL`；另有 `LLM_MODEL_MINOR/MAJOR`（记录但未启用）。
+- **嵌入模型防误配**（`_resolve_embed_model()`）：只接受 `auto` / 含 `/` 的路径或 repo_id / 含 bge|gte|e5|embedding 关键字的值。**聊天模型名被误配到嵌入位会静默退化成 HashEmbedder（无语义），毁掉 BGE 索引**，故一律丢弃回退 auto 并告警。
+- `LLM_MAX_TOKENS=4096` / `LLM_TIMEOUT=180`：推理型模型思考也计 token，给小了会「只思考、不回答」。
+- 诊断端点 `GET /api/llm/status`：base_url / chat_model / 掩码 key / online_mode，排 401 先看它。
+- tokenhub 实测：`deepseek-v4-flash` 先吐 `reasoning_content` 再吐 `content`，支持 function calling；`pro`/`qwen-*` 常 429。
+- **2026-09-17：key `sk-da02…9129` 返回 401 invalid or disabled（持续，非限流）**，旧 DeepSeek key 402 欠费 → 扩写暂停等新 key。
+- 验证脚本：`scripts/verify_llm_prefix.py`、`scripts/verify_llm_config.py`。
 
-## 人工复核（HITL）+ 审计日志（2026-08-29 加入）
-- `review_status ∈ {pending, approved, rejected}` 在 `messages`（AI 回答）与 `documents`（知识库）。
-- 默认：患者/群众回答→`pending`；医护/admin 自答→`approved`；新上传文档→`pending`；历史/播种文档→`approved`（默认可检索）。
-- 检索只取 `review_status='approved' AND status='ready'`，未复核文档不参与 RAG 上下文。
-- 路由蓝图 `review_bp`@`/api/review`：列表待复核 + approve/reject（doctor/admin）；`/audit` 仅 admin。审计写入为旁路静默，失败不阻断业务。
-- 关键文件：`backend/services/audit_service.py`、`backend/routes/review_bp.py`、`backend/services/chat_service.py`、`backend/services/kb_service.py`、`backend/rag/retriever.py`、`backend/models/schema_mysql.sql`、`backend/models/schema.sql`。
+## Agent 编排层
+- `backend/agent/`：orchestrator.py（ReAct，在线最多 6 步 + 离线规则降级）、tools.py（search_knowledge / reverse_geocode / get_weather / query_hospitalizations / query_appointments）、service.py（SSE）。
+- 路由：`GET /api/agent/tools`、`POST /api/agent/stream/<conv_id>`。
+- SSE 事件：`thought`/`tool_call`/`observation`/`citations`/`message`/`done`/`error`；轨迹存 `messages.agent_steps`。
+- 前端 `Chat.vue` 有「智能体模式」开关，`ChatMessage.vue` 渲染可折叠思考时间线。
 
-## 启动/验证
-- 依赖环境：本机 anaconda python（`C:\huanjing\Anaconda\python.exe`，含 flask 3.1.3）可用于导入/集成测试；managed python 需自建 venv 装 requirements。
-- 启动即 `init_schema()`+自动播种（空库时），随后可用 `/api/health`、`/api/vector/status`、`/api/review/*` 验证。
-- 前端：`vite.config.ts` 已配 `/api` → `http://127.0.0.1:8010` 代理，dev 端口 5173。
+## 人工复核（HITL）+ 审计
+- `review_status ∈ {pending, approved, rejected}`（messages 与 documents）。患者/群众回答→`pending`；医护自答→`approved`；新上传文档→`pending`；播种文档→`approved`。
+- 检索只取 `review_status='approved' AND status='ready'`。
+- `review_bp`@`/api/review`：待复核列表 + approve/reject（doctor/admin）；`/audit` 仅 admin。审计旁路静默，失败不阻断业务。
+- 关键文件：`backend/services/audit_service.py`、`backend/routes/review_bp.py`、`backend/services/chat_service.py`、`backend/services/kb_service.py`、`backend/rag/retriever.py`。
 
-## Docker 全栈（gunicorn --preload 关键）
-- **启动命令**：`gunicorn -c /app/gunicorn.conf.py wsgi:app`（项目根 `gunicorn.conf.py`：`preload_app=True` + `timeout=300` + `post_fork` 钩子把 `backend.rag.vectorstore._store` 重置为 None）。
-- **⚠️ fork 安全铁律（2026-08-31 血泪修复）**：`wsgi.py` 模块级 `init_database()` 里的向量库 warmup **必须 `t.join()` 等完成后再 fork**（否则 worker 继承半初始化 torch 状态，SSE 检索在 `embedder.encode` 挂起 90s+ 无响应）；`--preload` 下 master 建立的 pymilvus gRPC 连接绝不能被 4 worker 共享（post_fork 重置单例，各 worker 自建连接）。
-- **验证 docker 栈只能走 :3000（frontend nginx）或容器内 exec**：宿主机 `0.0.0.0:8010` 被本地 python（跑 `backend\__main__.py`）抢占，`curl 127.0.0.1:8010` 打到宿主旧库（222 篇无妇儿疾病）。3000 端口属主是 docker 转发器（`::` PID 9340），无本地抢占。
-- SSE 经 nginx 必须 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding on;`（`nginx.conf` + `frontend/nginx.conf` 已加），否则 EventSource 收不到增量。
-- 容器内 SSE E2E 复验脚本：`scripts/e2e_container_test.py`（登录→建会话 kb_id=12→SSE 流式，统计 data 行/citations）。
-- 知识库增量索引脚本：`scripts/index_kb12.py`（只处理 kb_id=12 妇儿疾病，20 篇→20 chunks）。
+## Docker 全栈
+- 启动：`gunicorn -c /app/gunicorn.conf.py wsgi:app`（`preload_app=True` + `timeout=300` + `post_fork` 重置 `backend.rag.vectorstore._store=None`）。
+- **fork 安全铁律**：`wsgi.py` 模块级向量库 warmup **必须 `t.join()` 等完再 fork**，否则 worker 继承半初始化 torch 状态，SSE 检索在 `embedder.encode` 挂起 90s+；`--preload` 下 master 的 pymilvus 连接不可被 worker 共享。
+- SSE 经 nginx 必须 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding on;`。
+- 验证 docker 栈走 :3000（frontend nginx）或容器内 exec，勿用宿主机 8010（常被本地 python 抢占）。
+- 脚本：`scripts/e2e_container_test.py`、`scripts/index_kb12.py`。
 
-## 数据规模 / 演示账号
-- 12 个疾病知识库（公开）+ 医生私有库（我的临床笔记/疑难病例讨论/用药经验总结/手术记录集/科研文献整理）+ 平台公共私有库 + admin 私有库。
-- 文档实际数量 **481 篇**（`backend/data/uploads/<知识库>/公开|私有/`，9/8 经 DeepSeek 扩写到 avg 2500 字）。注意：早期 241 篇口径已过时。
-- 演示账号 patientdemo/doctordemo/nursedemo/publicdemo/admindemo，密码统一 `demo123`；另有 doctor01~16、nurse01~08、patient01~30、public01~05。
+## PocketBay 部署（已上线 ✅）
+- 目标 https://medical-assistant-204c.pocketbay.app（slug `medical-assistant-204c`，deployment 7667）。
+- 平台约束：**仅 SQLite + NumpyStore**（无 MySQL/Milvus/Redis）；入口 `gunicorn app:app`（cwd=/app/backend，需 sys.path 注入项目根）；bind 须读 `PORT`/`BACKEND_PORT`（只健康检查 8080）。
+- **autosleep**：HTTP 唤醒只返 204；真实唤醒靠 `agent-browser` 点外壳上的「唤醒并继续」（**不在 iframe 内**）。**休眠窗口极短**，唤醒/登录/提问必须在同一次调用内完成。
+- 最稳验证路径：浏览器只负责点唤醒，随后立刻用 `C:\Users\23187\pb_tmp\pb_e2e_http3.py` 跑 HTTP E2E。
+- `scripts/pack_pocketbay.py`：排除 `backend/data/ai_models`(4.7G)/venv/.git/*.db/numpy_store.pkl；仅 `backend/.env` 允许作为敏感配置；**打包时生成 platform 专用 .env**（`DB_TYPE=sqlite`、`MILVUS_ENABLE=0`、剥 `MYSQL_*`/`MILVUS_*`），不动本地 .env。
+- 凭据 `~/.pocketbay/credentials.json` = `{"https://pocketbay.com": {"_device": {"token": "pb_..."}}}`；API host 是 `https://pocketbay.com/api/ai/...`（**非** `api.pocketbay.com`，后者 308）。Cloudflare 拦裸 urllib → 需 Chrome UA。
+
+## agent-browser 铁律
+- **`open <url>` 会卡死守护进程**（页面挂休眠实例时 load 不触发）→ 改用 `open`(about:blank) + `eval "location.href='<url>'"`。
+- **`find` 不穿透 iframe，`snapshot` 会** → 先 snapshot 拿 ref 再操作 `@eN`；ref 跨命令不可靠，脚本里需动态解析。
+- 截图路径必须 Windows 格式（`C:/...`），`/c/...` 报 `os error 3`。
+- 卡死恢复：删 `~/.agent-browser/default.*` + `taskkill /F /IM agent-browser-win32-x64.exe`；清遗留 Chromium 须按命令行含 `*agent-browser-chrome*` 精确匹配，**勿误杀用户自己的 Chrome**。
+
+## 演示账号
+- patientdemo / doctordemo / nursedemo / publicdemo / admindemo，密码统一 `demo123`；另有 doctor01~16、nurse01~08、patient01~30、public01~05。
 
 ## 文档现状
-- `README.md`（2026-08-30 重写）：架构图 + RAG 链路 + Agent 协议 + HITL + 角色矩阵 + 部署 + 环境变量 + 排错，全部按代码实测校准。
-- **`部署说明.md` 已过时，勿直接照搬**：写了 Redis 服务（docker-compose.yml 里根本没有）、mysql 8.0.40/etcd v3.5.18/milvus v2.5.4 版本号与 compose 实际（8.0 / v3.5.12 / v2.5.6）不符、称 242 篇文档、引用不存在的 `backend/data/kb_docs_src/`。
-- `.env.example` 部分变量已失效：`JWT_EXPIRES_HOURS`（config 实际是 `JWT_EXP_HOURS`）、`DATABASE_PATH`、`QUERY_PREFIX`、`QUERY_EXPAND`、`MILVUS_DB` 均未被 config.py 读取。
-
-## 知识库上传（关键点）
-- 单文件 `POST /api/kb/<id>/documents` + 批量 `POST /api/kb/<id>/documents/batch`（`files` 字段可重复，最多 200/次；每个失败独立返回不阻塞）。
-- `kb_service.upload_document` 写向量前 **必须** `vs = get_vectorstore()`（2026-08-31 修复，之前引用未定义 `vs` 直接 NameError，UI 通道实际上从来不能上传，全靠 `seed_all()` 播种）。
-- 前端：单文件 `<el-upload>` 已弃用，`KnowledgeBase.vue` 改用隐藏 `<input type="file" multiple>` + 队列面板（按文件显示状态：上传中/成功N分片/失败悬停看错误）。
-- 单请求总大小：`MAX_CONTENT_LENGTH` = 64 MB（`backend/app.py`）。
-- 集成验证脚本：`scripts/test_batch_upload.py`（Flask test_client，无需 MySQL），覆盖 happy path + 空文件 + 不存在 KB 三种情形。
-
-## 删除 = 逻辑删除（2026-09-08 约定）
-- `DELETE /api/kb/<id>`（`delete_knowledge_base`）与 `DELETE /api/kb/documents/<doc_id>`（`delete_document`）**只删向量 + DB 记录，绝不删 `backend/data/uploads/` 磁盘目录/文件**（用户铁律：前端删文档/知识库不得动本地磁盘源文件，便于重新导入与溯源）。
-- 修改点：`backend/services/kb_service.py` 移除 `shutil.rmtree`/`file_path.unlink()` 两段，`import shutil` 已删。
-
-## PocketBay 部署协议（2026-09-08 已上线 ✅）
-- **部署目标**：https://medical-assistant-204c.pocketbay.app（slug `medical-assistant-204c`，最新 deployment **7667**，status running）
-- **平台运行时约束**：
-  - 仅支持 **SQLite + NumpyStore**，无 MySQL、无 Milvus、无 Redis
-  - 入口自动检测 `gunicorn app:app`（cwd=/app/backend），需 sys.path 注入项目根
-  - gunicorn bind 须读 `PORT`/`BACKEND_PORT` 环境变量（平台只健康检查 8080）
-  - 部署后实例 **autosleep**：HTTP 唤醒只返 204；真实唤醒靠 `agent-browser` 点顶层
-    `button "唤醒并继续"`（注意该按钮在 PocketBay 外壳上，**不在 iframe 内**，
-    所以 `find text` 能直接点到）
-  - **实例休眠窗口极短**：唤醒/登录/提问必须在**同一次 Bash 调用内连续完成**，跨调用必重新入睡
-  - **最稳的线上验证路径**：浏览器只负责「点唤醒」，随后立刻用
-    `C:\Users\23187\pb_tmp\pb_e2e_http3.py` 跑 HTTP E2E（确定性、快、证据完整）
-- **跨库兼容铁律**：
-  - `backend/utils/db.py` 模块级导出 `NOW_SQL = "NOW()" if DB_TYPE=="mysql" else "datetime('now','localtime')"`
-  - 所有 `SQL UPDATE ... updated_at` 必须用 f-string `{NOW_SQL}`，**禁止裸写 `NOW()`**（chat_service.py / agent/service.py / review_bp.py / db.py 都已统一）
-  - 表迁移里 `INT UNSIGNED` + `COMMENT` 是 MySQL 专属 → SQLite 走 `INTEGER NULL`，无 COMMENT
-- **打包脚本** `scripts/pack_pocketbay.py`：
-  - 排除 `backend/data/ai_models`（4.7GB 模型权重，容器无 torch）/venv/.git/local *.db/numpy_store.pkl
-  - 白名单仅 `backend/.env` 为 sensitive config；其他 secret 拒收并 `sys.exit(2)`
-  - 打包时**生成 platform 专用 .env** 注入 `DB_TYPE=sqlite` / `MILVUS_ENABLE=0`、剥 `MYSQL_*`/`MILVUS_HOST`/`MILVUS_PORT`，不动本地 `backend/.env`
-- **凭据**：`~/.pocketbay/credentials.json` 结构 = `{"https://pocketbay.com": {"_device": {"token": "pb_...", "label": "..."}}}`
-- **API host**：`https://pocketbay.com/api/ai/...`（**非** `api.pocketbay.com`，后者会 308 到前端）
-- **Cloudflare 拦截**：裸 `urllib` → 403 error code 1010，必须 `User-Agent: Mozilla/5.0 Chrome/120`
-- **E2E 验证脚本** `C:\Users\23187\pb_tmp\pb_e2e_http3.py`：health→login→new_conv→POST /api/chat/stream/<id> SSE 流式，验证零 500
-- **演示账号**：patientdemo/doctordemo/nursedemo/publicdemo/admindemo（密码 demo123）已部署可用
-
-## 知识库扩写 + 重建向量（2026-09-08 11:45）
-- 481 篇 md 经 DeepSeek 扩写到平均 2500 字（min 1069 / max 4028），断点续跑 + 结构校验
-- 修复 `NumpyStore.insert_batch()` 不支持 `flush` 关键字（numpy 兜底模式 seed/reindex 之前全灭）
-- ⚠️ 重建向量前必须确认运行时向量后端（milvus vs numpy），否则数据落错后端
-- `numpy_store.pkl` 已 `.gitignore`，Milvus 是权威向量库
-
-## LLM 网关配置（2026-09-12 换为传智 tokenhub）
-- **线上/本地统一**：`LLM_BASE_URL=https://tokenhub.itcast.cn/v1`，`LLM_CHAT_MODEL=deepseek-v4-flash`
-- **双命名兼容**：`config.py` 同时认 `LLM_*`（canonical）与 `OPENAI_*`（历史别名），
-  解析优先级 = **真实环境完整对 > .env 完整对 > 真实环境半套 > .env 半套 > 默认 LLM_**。
-  实现要点：必须在 `load_dotenv` **之前** 快照 `_ENV_SNAPSHOT`，否则 .env 合并进
-  `os.environ` 后分不清来源，平台面板配置会被静默忽略。
-- **铁律**：BASE_URL / API_KEY / CHAT_MODEL 必须**同一前缀成对**，禁止跨前缀混搭。
-  历史事故：面板里换了新 key 但 base_url 仍是 .env 里的旧网关 → 新 key 打到旧网关 → 401。
-- `LLM_MAX_TOKENS=4096` / `LLM_TIMEOUT=180`：**推理型模型思考过程也计入 token**，
-  预算给小了会「只思考、不回答」（supervisor 原来的 100 必然踩坑）。
-- **诊断端点** `GET /api/llm/status`：返回 base_url / chat_model / 掩码 key / online_mode，排 401 先看它。
-- tokenhub 实测：仅 `deepseek-v4-flash` 有额度（pro / qwen-* 全 429）；
-  先吐 `reasoning_content` 再吐 `content`；**支持 function calling**。
-- 验证脚本：`scripts/verify_llm_prefix.py`（前缀决策 4 用例）、`scripts/verify_llm_config.py`（真实网关流式）。
-
-## agent-browser 使用铁律（2026-09-12 踩坑沉淀）
-- **`open <url>` 会卡死守护进程**：页面挂着休眠实例时 load 事件长期不触发，
-  命令挂 8~17 分钟，之后所有命令超时 `os error 10060`。
-  → 改用 `open`（about:blank）+ `eval "location.href='<url>'"`，eval 不等 load。
-- **`find <locator>` 不穿透 iframe，`snapshot` 会**。PocketBay 应用在
-  `Iframe "Application"` 内 → 登录表单等必须「先 snapshot 拿 ref → 再操作 `@eN`」。
-- **ref 跨命令/跨进程不可靠** → 脚本里用 grep 从 snapshot 输出**动态解析 ref**。
-- **截图路径必须 Windows 格式**（`C:/...`），MSYS 的 `/c/...` 报 `os error 3`。
-- 守护进程卡死恢复：删 `~/.agent-browser/default.*` + `taskkill /F /IM agent-browser-win32-x64.exe`；
-  清遗留 Chromium 必须按命令行含 `*agent-browser-chrome*` 精确匹配，**勿误杀用户自己的 Chrome**。
+- `README.md`（2026-08-30 重写）按代码实测校准，可信。
+- **`部署说明.md` 已过时勿照搬**（写了不存在的 Redis、版本号不符、篇数错误）。
+- `.env.example` 多个变量已失效（`JWT_EXPIRES_HOURS`、`DATABASE_PATH`、`QUERY_PREFIX`、`QUERY_EXPAND`、`MILVUS_DB` 均未被 config 读取）。

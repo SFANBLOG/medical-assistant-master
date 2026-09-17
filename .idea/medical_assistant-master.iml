@@ -11,7 +11,7 @@
     <orderEntry type="module" module-name="医疗导诊助手" />
     <orderEntry type="module" module-name="12-Agent-马佳" />
     <orderEntry type="module" module-name="lumos" />
-    <orderEntry type="module" module-name="FreeAiHR-main" />
     <orderEntry type="module" module-name="ai-nutritionist-agent" />
+    <orderEntry type="module" module-name="travel-planner-agent" />
   </component>
 </module>

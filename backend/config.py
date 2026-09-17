@@ -79,13 +79,55 @@ _LLM_PREFIX = (
 
 LLM_BASE_URL = os.getenv(_LLM_PREFIX + "BASE_URL") or "https://api.deepseek.com/v1"
 LLM_API_KEY = os.getenv(_LLM_PREFIX + "API_KEY") or ""
-LLM_CHAT_MODEL = os.getenv(_LLM_PREFIX + "CHAT_MODEL") or "deepseek-chat"
+# 模型名支持三套命名，按优先级：LLM_MODEL > LLM_CHAT_MODEL > OPENAI_CHAT_MODEL
+# （LLM_MODEL 是「单一主力模型」的简写命名，LLM_MODEL_MINOR/MAJOR 目前仅记录不启用）
+LLM_CHAT_MODEL = (
+    os.getenv("LLM_MODEL")
+    or os.getenv(_LLM_PREFIX + "CHAT_MODEL")
+    or "deepseek-chat"
+)
+LLM_MODEL_MINOR = os.getenv("LLM_MODEL_MINOR", "")
+LLM_MODEL_MAJOR = os.getenv("LLM_MODEL_MAJOR", "")
 
 # 历史别名（向后兼容既有代码 import）
 OPENAI_BASE_URL = LLM_BASE_URL
 OPENAI_API_KEY = LLM_API_KEY
 OPENAI_CHAT_MODEL = LLM_CHAT_MODEL
-OPENAI_EMBED_MODEL = os.getenv("LLM_EMBED_MODEL") or os.getenv("OPENAI_EMBED_MODEL", "auto")
+def _resolve_embed_model() -> str:
+    """
+    确定嵌入模型配置。
+
+    嵌入模型只接受三类合法值：
+      - "auto"：自动检测 MODEL_DIR 下已下载的 BGE 模型
+      - 含 "/" 的 HuggingFace repo_id 或本地路径（如 BAAI/bge-base-zh-v1.5）
+      - 已知嵌入模型关键字（bge / gte / e5 / embedding 等）
+
+    为什么要校验：聊天模型名（如 deepseek-v4-flash）一旦被误配到嵌入位，
+    embedder 会找不到本地模型并**静默回退 HashEmbedder（无语义能力）**，
+    导致此前用 BGE 建立的语义索引整体失效，且日志里只有一行提示，极难排查。
+    因此凡是不像嵌入模型的值一律丢弃，回退 "auto"，并在启动时打印告警。
+    """
+    candidates = [
+        ("LLM_MODEL_EMBEDDING", os.getenv("LLM_MODEL_EMBEDDING")),
+        ("LLM_EMBED_MODEL", os.getenv("LLM_EMBED_MODEL")),
+        ("OPENAI_EMBED_MODEL", os.getenv("OPENAI_EMBED_MODEL")),
+    ]
+    embed_kw = ("bge", "gte", "e5", "embedding", "embed", "sentence")
+    for name, val in candidates:
+        if not val:
+            continue
+        v = val.strip()
+        low = v.lower()
+        if v == "auto" or "/" in v or "\\" in v or any(k in low for k in embed_kw):
+            return v
+        print(
+            f"[config] 忽略 {name}={v}：它不像嵌入模型标识，"
+            f"强制回退 auto（避免退化成无语义的 HashEmbedder）"
+        )
+    return "auto"
+
+
+OPENAI_EMBED_MODEL = _resolve_embed_model()
 
 # 单次补全预算。推理型模型（deepseek-v4-flash 等）的思考过程同样计入 token，
 # 预算过小会出现「只思考、不回答」，所以默认给足。
