@@ -3,8 +3,9 @@
   <component name="PySourceRootDetectionService">
     <option name="sourcePathsSet">
       <set>
-        <option value="$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/backend" />
         <option value="$PROJECT_DIR$/../../project/enterprise-rag-qa" />
+        <option value="$PROJECT_DIR$/../../yu-ai-learn-main/yu-ai-learn-main/backend" />
+        <option value="$USER_HOME$/Downloads/25、18个Agent实战项目/travel-planner-agent/backend" />
       </set>
     </option>
   </component>
