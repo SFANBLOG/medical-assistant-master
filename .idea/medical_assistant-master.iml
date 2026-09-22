@@ -14,5 +14,7 @@
     <orderEntry type="module" module-name="ai-nutritionist-agent" />
     <orderEntry type="module" module-name="travel-planner-agent" />
     <orderEntry type="module" module-name="13-解光林" />
+    <orderEntry type="module" module-name="smart-meeting-minutes-assistant" />
+    <orderEntry type="module" module-name="学生面试题整理" />
   </component>
 </module>
