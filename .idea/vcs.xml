@@ -5,8 +5,5 @@
     <mapping directory="$PROJECT_DIR$/../../FreeAiHR-main" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../../lumos/lumos" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$USER_HOME$/Downloads/25、18个Agent实战项目/ai-nutritionist-agent" vcs="Git" />
-    <mapping directory="$USER_HOME$/Downloads/25、18个Agent实战项目/smart-meeting-minutes-assistant" vcs="Git" />
-    <mapping directory="$USER_HOME$/Downloads/25、18个Agent实战项目/travel-planner-agent" vcs="Git" />
   </component>
 </project>
