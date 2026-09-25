@@ -165,10 +165,18 @@ RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "8"))
 # 相关性下限：低于此分的候选不进入 LLM 上下文（过滤噪声 → 提升回答质量）。
 # 融合算法下相关文档普遍 >=0.90，不相关 <0.45，0.45 可干净切分两者。
 RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.45"))
-# 重排融合权重（稠密余弦 + BM25 归一化 + 词法重叠）
+# 重排融合权重（稠密余弦 + BM25 归一化 + 词法重叠）——仅 HYBRID_FUSION=weighted 时生效
 RERANK_W_DENSE = float(os.getenv("RERANK_W_DENSE", "0.55"))
 RERANK_W_BM25 = float(os.getenv("RERANK_W_BM25", "0.30"))
 RERANK_W_LEXICAL = float(os.getenv("RERANK_W_LEXICAL", "0.15"))
+# 混合检索融合方式（二选一）：
+#   weighted（默认）：双分支合并去重 → 加权证据分 + 实体地板校准 + 位置/长度惩罚的重排器
+#   rrf            ：双分支各按名次做 Reciprocal Rank Fusion（Σ 1/(RRF_K+rank)）取 Top-K，
+#                    纯排名融合、丢弃分数幅值，不经过加权重排器。
+# 默认保持 weighted 以维持已调优的相关度与离线指标；设 HYBRID_FUSION=rrf 可启用 RRF 通道。
+HYBRID_FUSION = os.getenv("HYBRID_FUSION", "weighted").lower()
+# RRF 平滑常数（标准取值 60），名次越靠后贡献越小。
+RRF_K = int(os.getenv("RRF_K", "60"))
 # Cross-Encoder 模型路径（留空或 "auto" 则用融合模式；推荐 BAAI/bge-reranker-v2-min）
 RERANK_MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "auto")
 # 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 CE 模型，找不到则用增强融合。

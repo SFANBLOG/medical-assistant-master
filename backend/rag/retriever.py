@@ -186,6 +186,47 @@ def _ensure_bm25() -> Optional[BM25Index]:
         return None
 
 
+def _hit_base(h: dict) -> dict:
+    """从单通道命中提取候选所需的基础字段（dense / bm25 命中结构兼容）。"""
+    return {
+        "id": h.get("id"),
+        "kb_id": h.get("kb_id"),
+        "doc_id": h.get("doc_id"),
+        "chunk_index": h.get("chunk_index"),
+        "text": h.get("text", ""),
+    }
+
+
+def _rrf_fuse(
+    dense_hits: list[dict],
+    bm25_hits: list[dict],
+    top_k: int,
+    k: Optional[int] = None,
+) -> list[dict]:
+    """Reciprocal Rank Fusion：对稠密与 BM25 两条名次列表按 1/(k+rank) 累加融合。
+
+    纯排名融合、不依赖各通道分数可比性；输出与加权重排器同构（含 score 字段，
+    归一化到 0~1 便于下游展示/引用），供阶段4 元数据补全直接消费。
+    """
+    kk = config.RRF_K if k is None else k
+    fused: dict[tuple, dict] = {}
+    for rank, h in enumerate(dense_hits):
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        entry = fused.setdefault(key, {**_hit_base(h), "fusion_rrf": 0.0})
+        entry["fusion_rrf"] += 1.0 / (kk + rank + 1)
+    for rank, h in enumerate(bm25_hits):
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        entry = fused.setdefault(key, {**_hit_base(h), "fusion_rrf": 0.0})
+        entry["fusion_rrf"] += 1.0 / (kk + rank + 1)
+    if not fused:
+        return []
+    ranked = sorted(fused.values(), key=lambda x: x["fusion_rrf"], reverse=True)[:top_k]
+    max_rrf = ranked[0]["fusion_rrf"] or 1.0
+    for x in ranked:
+        x["score"] = round(x["fusion_rrf"] / max_rrf, 4)
+    return ranked
+
+
 def retrieve(
     query: str,
     role: str,
@@ -234,27 +275,15 @@ def retrieve(
         expanded_query = _expand_query(query)
         bm25_hits = bm25.search(expanded_query, kb_ids, top_k=config.BM25_TOP_K)
 
-    # ---- 阶段2：合并、去重得到候选集 ----
-    candidates: dict[tuple, dict] = {}
-    for h in dense_hits:
-        key = (h.get("doc_id"), h.get("chunk_index"))
-        candidates[key] = {
-            "id": h.get("id"),
-            "kb_id": h.get("kb_id"),
-            "doc_id": h.get("doc_id"),
-            "chunk_index": h.get("chunk_index"),
-            "text": h.get("text", ""),
-            "similarity": h.get("similarity", 0.0),
-            "bm25": 0.0,
-        }
-    for h in bm25_hits:
-        key = (h.get("doc_id"), h.get("chunk_index"))
-        if key in candidates:
-            # 已存在：补上 BM25 分数，稠密相似度取较大者
-            candidates[key]["bm25"] = h.get("bm25", 0.0)
-            if h.get("similarity", 0.0) > candidates[key]["similarity"]:
-                candidates[key]["similarity"] = h.get("similarity", 0.0)
-        else:
+    # ---- 阶段2/3：融合 + 排序，按 HYBRID_FUSION 分支（默认 weighted，保持既有调优与指标）----
+    if config.HYBRID_FUSION == "rrf":
+        # RRF：纯名次融合，跳过加权证据分与实体地板重排器
+        reranked = _rrf_fuse(dense_hits, bm25_hits, top_k=top_k)
+    else:
+        # weighted：双分支合并去重 → 加权重排器（实体地板校准 + 位置/长度惩罚）
+        candidates: dict[tuple, dict] = {}
+        for h in dense_hits:
+            key = (h.get("doc_id"), h.get("chunk_index"))
             candidates[key] = {
                 "id": h.get("id"),
                 "kb_id": h.get("kb_id"),
@@ -262,20 +291,36 @@ def retrieve(
                 "chunk_index": h.get("chunk_index"),
                 "text": h.get("text", ""),
                 "similarity": h.get("similarity", 0.0),
-                "bm25": h.get("bm25", 0.0),
+                "bm25": 0.0,
             }
+        for h in bm25_hits:
+            key = (h.get("doc_id"), h.get("chunk_index"))
+            if key in candidates:
+                # 已存在：补上 BM25 分数，稠密相似度取较大者
+                candidates[key]["bm25"] = h.get("bm25", 0.0)
+                if h.get("similarity", 0.0) > candidates[key]["similarity"]:
+                    candidates[key]["similarity"] = h.get("similarity", 0.0)
+            else:
+                candidates[key] = {
+                    "id": h.get("id"),
+                    "kb_id": h.get("kb_id"),
+                    "doc_id": h.get("doc_id"),
+                    "chunk_index": h.get("chunk_index"),
+                    "text": h.get("text", ""),
+                    "similarity": h.get("similarity", 0.0),
+                    "bm25": h.get("bm25", 0.0),
+                }
 
-    if not candidates:
-        return []
+        if not candidates:
+            return []
 
-    # ---- 阶段3：Cross-Encoder 重排，过滤低相关，取 top-N ----
-    reranker = get_reranker()
-    reranked = reranker.rerank(
-        query,
-        list(candidates.values()),
-        top_k=top_k,
-        min_score=config.RERANK_MIN_SCORE,
-    )
+        reranker = get_reranker()
+        reranked = reranker.rerank(
+            query,
+            list(candidates.values()),
+            top_k=top_k,
+            min_score=config.RERANK_MIN_SCORE,
+        )
     if not reranked:
         return []
 
