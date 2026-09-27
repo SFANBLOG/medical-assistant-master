@@ -169,14 +169,21 @@ RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.45"))
 RERANK_W_DENSE = float(os.getenv("RERANK_W_DENSE", "0.55"))
 RERANK_W_BM25 = float(os.getenv("RERANK_W_BM25", "0.30"))
 RERANK_W_LEXICAL = float(os.getenv("RERANK_W_LEXICAL", "0.15"))
-# 混合检索融合方式（二选一）：
-#   weighted（默认）：双分支合并去重 → 加权证据分 + 实体地板校准 + 位置/长度惩罚的重排器
-#   rrf            ：双分支各按名次做 Reciprocal Rank Fusion（Σ 1/(RRF_K+rank)）取 Top-K，
-#                    纯排名融合、丢弃分数幅值，不经过加权重排器。
-# 默认保持 weighted 以维持已调优的相关度与离线指标；设 HYBRID_FUSION=rrf 可启用 RRF 通道。
-HYBRID_FUSION = os.getenv("HYBRID_FUSION", "weighted").lower()
+# 混合检索融合方式（三选一）：
+#   weighted    ：双分支合并去重 → 直接交给加权重排器（实体地板校准 + 位置/长度惩罚）。
+#   rrf         ：双分支各按名次做 Reciprocal Rank Fusion（Σ 1/(RRF_K+rank)）取 Top-K，
+#                 纯排名融合、丢弃分数幅值，不经过加权重排器。
+#   rrf_rerank  ：先 RRF 名次融合裁剪候选池（对两路分数尺度不敏感、鲁棒），再把池交给
+#                 加权重排器做精排/实体地板/阈值过滤 —— BGE + BM25 + RRF 三者串联。
+# 默认 rrf_rerank：RRF 稳健融合两路召回并裁剪候选池，重排器负责精排，
+# 既用上 RRF 的尺度无关融合优势，又保留已调优的实体地板与相关度指标。
+HYBRID_FUSION = os.getenv("HYBRID_FUSION", "rrf_rerank").lower()
 # RRF 平滑常数（标准取值 60），名次越靠后贡献越小。
 RRF_K = int(os.getenv("RRF_K", "60"))
+# rrf_rerank 模式下，RRF 融合后送入重排器的候选池大小（应 >= RERANK_TOP_K）。
+# 两路各召回 30、合并去重约 40~60 条；真正相关的文档几乎都在两路前列（RRF 分天然靠前），
+# 稳定进入候选池，不会误砍，最终 Top-8 由重排器在池内精排裁决。
+RRF_POOL_SIZE = int(os.getenv("RRF_POOL_SIZE", "30"))
 # Cross-Encoder 模型路径（留空或 "auto" 则用融合模式；推荐 BAAI/bge-reranker-v2-min）
 RERANK_MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "auto")
 # 值 "auto" 表示自动在 MODEL_DIR 下搜索已下载的 CE 模型，找不到则用增强融合。

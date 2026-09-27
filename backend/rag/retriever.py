@@ -227,6 +227,29 @@ def _rrf_fuse(
     return ranked
 
 
+def _rrf_select_pool(
+    dense_hits: list[dict],
+    bm25_hits: list[dict],
+    candidates: dict,
+    pool_size: int,
+) -> list[dict]:
+    """RRF 名次融合，从合并候选中挑选 Top pool_size 条送入重排器精排。
+
+    仅用名次（Σ 1/(RRF_K+rank)），对稠密/BM25 两路分数尺度不敏感、鲁棒；真正相关的
+    文档通常在两路都靠前，RRF 分高，稳定进入候选池，再由加权重排器在池内精排出 Top-K。
+    """
+    kk = config.RRF_K
+    rrf: dict[tuple, float] = {}
+    for rank, h in enumerate(dense_hits):
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        rrf[key] = rrf.get(key, 0.0) + 1.0 / (kk + rank + 1)
+    for rank, h in enumerate(bm25_hits):
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        rrf[key] = rrf.get(key, 0.0) + 1.0 / (kk + rank + 1)
+    ordered = sorted(rrf.keys(), key=lambda k: rrf[k], reverse=True)[:pool_size]
+    return [candidates[k] for k in ordered if k in candidates]
+
+
 def retrieve(
     query: str,
     role: str,
@@ -275,15 +298,27 @@ def retrieve(
         expanded_query = _expand_query(query)
         bm25_hits = bm25.search(expanded_query, kb_ids, top_k=config.BM25_TOP_K)
 
-    # ---- 阶段2/3：融合 + 排序，按 HYBRID_FUSION 分支（默认 weighted，保持既有调优与指标）----
-    if config.HYBRID_FUSION == "rrf":
-        # RRF：纯名次融合，跳过加权证据分与实体地板重排器
-        reranked = _rrf_fuse(dense_hits, bm25_hits, top_k=top_k)
-    else:
-        # weighted：双分支合并去重 → 加权重排器（实体地板校准 + 位置/长度惩罚）
-        candidates: dict[tuple, dict] = {}
-        for h in dense_hits:
-            key = (h.get("doc_id"), h.get("chunk_index"))
+    # ---- 阶段2：双分支合并去重（携带 dense 相似度与 BM25 分，供重排器使用）----
+    candidates: dict[tuple, dict] = {}
+    for h in dense_hits:
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        candidates[key] = {
+            "id": h.get("id"),
+            "kb_id": h.get("kb_id"),
+            "doc_id": h.get("doc_id"),
+            "chunk_index": h.get("chunk_index"),
+            "text": h.get("text", ""),
+            "similarity": h.get("similarity", 0.0),
+            "bm25": 0.0,
+        }
+    for h in bm25_hits:
+        key = (h.get("doc_id"), h.get("chunk_index"))
+        if key in candidates:
+            # 已存在：补上 BM25 分数，稠密相似度取较大者
+            candidates[key]["bm25"] = h.get("bm25", 0.0)
+            if h.get("similarity", 0.0) > candidates[key]["similarity"]:
+                candidates[key]["similarity"] = h.get("similarity", 0.0)
+        else:
             candidates[key] = {
                 "id": h.get("id"),
                 "kb_id": h.get("kb_id"),
@@ -291,33 +326,29 @@ def retrieve(
                 "chunk_index": h.get("chunk_index"),
                 "text": h.get("text", ""),
                 "similarity": h.get("similarity", 0.0),
-                "bm25": 0.0,
+                "bm25": h.get("bm25", 0.0),
             }
-        for h in bm25_hits:
-            key = (h.get("doc_id"), h.get("chunk_index"))
-            if key in candidates:
-                # 已存在：补上 BM25 分数，稠密相似度取较大者
-                candidates[key]["bm25"] = h.get("bm25", 0.0)
-                if h.get("similarity", 0.0) > candidates[key]["similarity"]:
-                    candidates[key]["similarity"] = h.get("similarity", 0.0)
-            else:
-                candidates[key] = {
-                    "id": h.get("id"),
-                    "kb_id": h.get("kb_id"),
-                    "doc_id": h.get("doc_id"),
-                    "chunk_index": h.get("chunk_index"),
-                    "text": h.get("text", ""),
-                    "similarity": h.get("similarity", 0.0),
-                    "bm25": h.get("bm25", 0.0),
-                }
 
-        if not candidates:
-            return []
-
+    # ---- 阶段3：融合 + 排序，按 HYBRID_FUSION 分支 ----
+    mode = config.HYBRID_FUSION
+    if mode == "rrf":
+        # 纯 RRF：跳过加权重排器
+        reranked = _rrf_fuse(dense_hits, bm25_hits, top_k=top_k)
+    else:
         reranker = get_reranker()
+        if mode == "rrf_rerank" and candidates:
+            # BGE + BM25 + RRF 串联：RRF 融合裁剪候选池 → 重排器池内精排
+            pool = _rrf_select_pool(
+                dense_hits, bm25_hits, candidates, pool_size=config.RRF_POOL_SIZE
+            )
+        else:
+            # weighted（或候选为空的兜底）：全量候选交给重排器
+            pool = list(candidates.values())
+        if not pool:
+            return []
         reranked = reranker.rerank(
             query,
-            list(candidates.values()),
+            pool,
             top_k=top_k,
             min_score=config.RERANK_MIN_SCORE,
         )
