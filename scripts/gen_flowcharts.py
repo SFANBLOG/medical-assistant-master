@@ -142,7 +142,7 @@ def fig_system_main():
         _arrow(ax, cx, y_mid - 3.1, cx, y_low + 2.6)
 
     # 底部数据层
-    _box(ax, 50, 16, 62, 7.5, "数据服务层：MySQL(17 表) ｜ Milvus向量 ｜ uploads 医学文档(241篇)\nRAG 混合检索重排 v4 + Agent 多智能体(Skills/MCP) / 离线兜底", C_DATA, fs=10.5)
+    _box(ax, 50, 16, 62, 7.5, "数据服务层：MySQL(17 表) ｜ Milvus向量 ｜ uploads 医学文档(241篇)\nRAG 混合检索重排 v4 + 安全护栏 / 用户画像注入 / 离线兜底", C_DATA, fs=10.5)
     for i, (name, cx, t1, t2) in enumerate(roles):
         _arrow(ax, cx, y_low - 2.6, cx, 19)
 
@@ -251,8 +251,8 @@ def fig_rag_chat():
     _arrow(ax, 50, 11.0, 50, 9.85)
 
     ax.text(50, 1.1,
-            "说明：RAG 模式帧 = citations 引用帧 + 增量内容 data 帧；Agent 智能体模式走 POST /api/agent/stream/<conv_id>，\n"
-            "事件含 meta / thought / tool_call / observation / message / done，并调用工具（详见 9-Agent 多智能体流程图）",
+            "说明：SSE 帧协议为扁平 JSON —— citations 引用帧先发送，随后 content 增量帧逐块透传 LLM 流，done 帧收尾；\n"
+            "急危重症命中输入护栏直接返回急救指引，落库前经输出护栏补免责声明",
             fontsize=8.6, ha="center", va="center", color="#666", linespacing=1.5)
 
     save(fig, "3-RAG智能问答业务流程图.png")
@@ -381,8 +381,7 @@ def fig_retriever():
 # 图6 前后端交互与 SSE 流式问答时序流程（标准泳道时序图）
 # =====================================================================
 def fig_sse_seq():
-    # 整体重写：旧图采用「两次请求 + delta 帧」，与现状不符（chat 模式为一次 POST 全流程；
-    # 帧为 citations + 增量 data，无 delta/done 命名；Agent 模式事件见 agent_bp 注释）。
+    # 帧协议为扁平 JSON：citations 引用帧先发 → content 增量帧逐块透传 → done 结束帧；异常时 error 帧。
     fig, ax = plt.subplots(figsize=(13.5, 10.5))
     _frame(ax, (0, 100), (0, 100), "医智助手 · 前端问答 SSE 流式交互时序图（chat 模式全流程）")
 
@@ -427,7 +426,7 @@ def fig_sse_seq():
             fontsize=8.8, ha="center", va="center", color="#555",
             bbox=dict(boxstyle="round,pad=0.3", fc="#eef4ff", ec="#aac4ff"), zorder=6)
     ax.text(50, 3.4,
-            "Agent 模式（POST /api/agent/stream）：事件含 meta / thought / tool_call / observation / citations / message / done / error，轨迹存 agent_steps（可观测）",
+            "结束与异常：正常收尾发 done 帧 {done:true}；LLM 异常时发 error 帧并自动降级到离线兜底生成；落库前经 ensure_disclaimer 补免责声明",
             fontsize=8.8, ha="center", va="center", color="#555",
             bbox=dict(boxstyle="round,pad=0.3", fc="#f5f0ff", ec="#c9b8ff"), zorder=6)
 
@@ -482,12 +481,12 @@ def fig_lifecycle():
         ("② 系统设计", "架构/数据库\n知识库/权限", "#2f7ed8"),
         ("③ 环境准备", "MySQL/Milvus\nPython/Node", "#1f9e7a"),
         ("④ 数据准备", "12库241篇文档\n种子数据", "#1f9e7a"),
-        ("⑤ 后端开发", "Blueprint/Service\nRAG+Agent 编排层", "#d8872f"),
+        ("⑤ 后端开发", "Blueprint/Service\nRAG 检索生成层", "#d8872f"),
         ("⑥ 前端开发", "Vue3 SPA\n角色路由", "#d8872f"),
         ("⑦ 部署启动", "本地 / Docker\nCompose", "#9a5cd6"),
         ("⑧ 运行使用", "5角色登录\n业务+问答", "#9a5cd6"),
-        ("⑨ 测试验收", "重排 Hit@1=100%\nAgent 离线评测", "#d84f4f"),
-        ("⑩ 迭代改进", "融合重排 v4\nAgent v2(MCP/Skills)", "#d84f4f"),
+        ("⑨ 测试验收", "重排 Hit@1=100%\n端到端问答验证", "#d84f4f"),
+        ("⑩ 迭代改进", "融合重排 v4\n安全护栏/画像注入", "#d84f4f"),
     ]
     n = len(phases)
     y = 40
@@ -509,84 +508,7 @@ def fig_lifecycle():
 
 
 # =====================================================================
-# 图9 Agent v2 多智能体问答流程（Supervisor + 子智能体 + 技能/工具）
-# =====================================================================
-def fig_agent_qa():
-    fig, ax = plt.subplots(figsize=(14.5, 11))
-    _frame(ax, (0, 100), (0, 100), "医智助手 · Agent v2 多智能体问答流程（Supervisor + 子智能体 + 技能/工具）")
-
-    # 1) 请求入口
-    _box(ax, 50, 97.5, 22, 5, "用户提问（Agent 模式）", C_START, shape="ellipse", fs=11)
-    _arrow(ax, 50, 95.0, 50, 93.4)
-    _box(ax, 50, 90.5, 42, 5.5, "POST /api/agent/stream/<conv_id> (JWT)\n{question, kb_id}", C_PROC, fs=9.5)
-    _arrow(ax, 50, 87.7, 50, 87.1)
-
-    # 2) 安全护栏
-    _box(ax, 50, 82.0, 26, 10, "安全护栏\n紧急/危重症状?", C_DEC, shape="diamond", fs=10)
-    _arrow(ax, 63, 82.0, 75.5, 82.0, label="是", fs=8.5)
-    _box(ax, 84, 82.0, 16, 8, "护栏触发\n直接输出急救指引\n(跳过 Agent 编排)", "#ffe3e3", ec="#d84f4f", fs=8.5)
-    ax.text(84, 72.5, "该分支同样保存消息并\n按角色进入复核队列", fontsize=7.6, ha="center", va="center", color="#999")
-    _arrow(ax, 50, 77.0, 50, 76.4)
-
-    # 3) 记忆注入
-    _box(ax, 50, 73.5, 44, 5.5, "记忆注入：get_enhanced_user_context\n(用户画像 / 历史偏好 / 随访提醒)", C_SUB, fs=9)
-    _arrow(ax, 50, 70.7, 50, 69.4)
-
-    # 4) Supervisor 路由
-    _box(ax, 50, 66.0, 52, 6.5, "Supervisor 意图分类：LLM JSON {agent, confidence, intent}\n离线降级：can_handle() 置信度路由 + classify_role 关键字兜底", C_SUB, fs=9)
-    _arrow(ax, 50, 62.7, 20, 60.6)
-    _arrow(ax, 50, 62.7, 50, 60.6)
-    _arrow(ax, 50, 62.7, 80, 60.6)
-
-    # 5) 6 个子智能体（两排）
-    agents1 = [("导诊 triage\n症状→科室推荐", 20), ("医生 doctor\n诊断/用药参考", 50), ("护士 nurse\n护理/康复指导", 80)]
-    agents2 = [("知识 knowledge\n库问答(默认兜底)", 20), ("排班 schedule\n出诊/预约管理", 50), ("随访 followup\n复诊/慢病跟踪", 80)]
-    for text, cx in agents1:
-        _box(ax, cx, 57.5, 18, 6, text, C_SUB, fs=8.8)
-    for text, cx in agents2:
-        _box(ax, cx, 50.0, 18, 6, text, C_SUB, fs=8.8)
-    for cx in (20, 50, 80):
-        _arrow(ax, cx, 54.4, cx, 53.2)
-    _arrow(ax, 20, 46.9, 20, 45.9)
-    _arrow(ax, 50, 46.9, 50, 45.9)
-    _arrow(ax, 80, 46.9, 80, 45.9)
-
-    # 6) ReAct 推理
-    _box(ax, 50, 42.5, 58, 6, "子智能体 ReAct 推理循环：thought → tool_call → observation\n技能/工具按角色白名单执行；知识问答内部复用 RAG v4 检索", C_PROC, fs=9)
-    _arrow(ax, 50, 39.4, 26, 37.0)
-    _arrow(ax, 50, 39.4, 74, 37.0)
-
-    # 7) 技能 / 工具
-    _box(ax, 26, 32.5, 26, 8.5,
-         "5 项技能 Skill（多步能力组合）\nmedical_qa 医学问答 ｜ triage 分诊\nappointment 预约 ｜ patient_records\nhealth_education 健教",
-         "#eef4ff", ec="#aac4ff", fs=8.3)
-    _box(ax, 74, 32.5, 26, 8.5,
-         "9 个工具 Tool（角色白名单过滤）\nsearch_knowledge → RAG v4 检索\ntriage_departments 分诊 ｜ 预约建单\n排班/病历/住院/天气/逆地理查询",
-         "#eef4ff", ec="#aac4ff", fs=8.3)
-    _arrow(ax, 26, 28.2, 41, 27.4)
-    _arrow(ax, 74, 28.2, 59, 27.4)
-
-    # 8) 写操作分支
-    _box(ax, 50, 22.5, 24, 9.5, "需要写操作?\n(预约/挂号)", C_DEC, shape="diamond", fs=10)
-    _arrow(ax, 62, 22.5, 73.5, 22.5, label="是", fs=8.5)
-    _box(ax, 85, 22.5, 22, 8.5, "create_appointment\n→ appointment_requests\n(pending) 医生复核后建单", C_DATA, fs=8.3)
-    _arrow(ax, 50, 17.7, 50, 15.9, label="否：常规问答", offset=(-5.5, 0), fs=8.5)
-    _arrow(ax, 85, 18.2, 76, 15.95)
-
-    # 9) SSE 事件流 + 持久化
-    _box(ax, 50, 12.5, 58, 6.5,
-         "SSE 事件流：meta / thought / tool_call / observation / citations\n/ message / done（异常 error）→ 前端逐条展示",
-         C_PROC, fs=8.8)
-    _arrow(ax, 50, 9.2, 50, 8.4)
-    _box(ax, 50, 4.8, 62, 6.5,
-         "持久化：messages + agent_steps(ReAct 轨迹) + citations\n患者/群众回答 → pending 医生复核队列 ｜ 医护/admin → approved",
-         C_DATA, fs=8.8)
-
-    save(fig, "9-Agent多智能体问答流程图.png")
-
-
-# =====================================================================
-# 图10 人工复核与审计流程（HITL 三通道）
+# 图9 人工复核与审计流程（HITL 三通道）
 # =====================================================================
 def fig_hitl_review():
     fig, ax = plt.subplots(figsize=(14.5, 10.5))
@@ -608,8 +530,8 @@ def fig_hitl_review():
     # 待复核来源
     srcs = [
         (20, "上传后自动 pending\n未复核文档不参与检索"),
-        (50, "患者/群众 Agent 回答\n自动进入待复核"),
-        (80, "Agent 调用预约工具\ncreate_appointment 后待审"),
+        (50, "患者/群众 AI 回答\n自动进入待复核"),
+        (80, "预约请求 appointment_requests\n(pending) 复核后建单"),
     ]
     for (cx, text), _ in zip(srcs, cols):
         _box(ax, cx, 81.0, 28, 6.5, text, C_PROC, fs=8.5)
@@ -666,10 +588,10 @@ def fig_hitl_review():
             "③ 写操作把关——预约单由医生人工确认后建单，杜绝 AI 越权动作。",
             fontsize=8.6, ha="center", va="center", color="#555", linespacing=1.75)
     ax.text(50, 3.2,
-            "图例：主线流程 ▼ ｜ 绿/红卡 = approve/reject 生效结果 ｜ 蓝带 = 审计链路（与 4-文档上传入库、9-Agent 流程衔接）",
+            "图例：主线流程 ▼ ｜ 绿/红卡 = approve/reject 生效结果 ｜ 蓝带 = 审计链路（与 4-文档上传入库、3-RAG 智能问答流程衔接）",
             fontsize=8.2, ha="center", va="center", color="#888")
 
-    save(fig, "10-人工复核与审计流程图.png")
+    save(fig, "9-人工复核与审计流程图.png")
 
 
 if __name__ == "__main__":
@@ -681,6 +603,5 @@ if __name__ == "__main__":
     fig_sse_seq()
     fig_deploy()
     fig_lifecycle()
-    fig_agent_qa()
     fig_hitl_review()
     print("全部流程图生成完成 ->", os.path.abspath(OUT_DIR))

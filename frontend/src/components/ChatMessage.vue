@@ -10,15 +10,6 @@
     </div>
 
     <div class="bubble-wrap">
-      <!-- Agent 角色标识：回答由哪个智能体产出，一目了然（按角色配色） -->
-      <div
-        v-if="message.role === 'assistant' && agentRoleLabel"
-        class="agent-role-badge"
-        :style="badgeStyle"
-      >
-        <el-icon><Cpu /></el-icon>
-        <span>{{ agentRoleLabel }}</span>
-      </div>
       <div class="bubble" :class="message.role">
         <!-- 打字中 -->
         <div v-if="message.streaming && !message.content" class="typing">
@@ -30,76 +21,6 @@
         <div v-else-if="message.streaming" class="content">{{ message.content }}</div>
         <div v-else class="content rich" v-html="renderedHtml" @click="onContentClick"></div>
         <div v-if="message.error" class="err-tip">（本次回答可能不完整）</div>
-      </div>
-
-      <!-- Agent 推理轨迹：思考 / 工具调用 / 观察 -->
-      <div
-        v-if="
-          message.role === 'assistant' &&
-          message.agentSteps &&
-          message.agentSteps.length > 0
-        "
-        class="agent-steps"
-      >
-        <div class="step-toggle" @click="stepsVisible = !stepsVisible">
-          <el-icon><Cpu /></el-icon>
-          <span>思考过程（Agent · {{ message.agentSteps.length }} 步）</span>
-          <el-icon class="step-arrow">
-            <ArrowUp v-if="stepsVisible" />
-            <ArrowDown v-else />
-          </el-icon>
-        </div>
-        <el-collapse-transition>
-          <div v-show="stepsVisible" class="step-list">
-            <div
-              v-for="(s, i) in message.agentSteps"
-              :key="i"
-              class="step-item"
-              :class="s.type"
-            >
-              <div class="step-rail">
-                <span class="step-dot" :style="{ background: stepColor(s) }"></span>
-                <span
-                  v-if="i < message.agentSteps.length - 1"
-                  class="step-line"
-                ></span>
-              </div>
-              <div class="step-content">
-                <div class="step-head">
-                  <span class="step-tag" :style="{ background: stepColor(s) }">
-                    {{ stepLabel(s) }}
-                  </span>
-                  <span v-if="stepElapsed(s)" class="step-time">{{ stepElapsed(s) }}</span>
-                </div>
-                <div class="step-body">
-                  <template v-if="s.type === 'tool_call'">
-                    <b>{{ s.name }}</b>
-                    <el-tag
-                      v-if="s.name === 'search_knowledge'"
-                      size="small"
-                      type="success"
-                      effect="plain"
-                      class="tool-retrieve"
-                    >检索</el-tag>
-                    <el-button
-                      v-if="s.name === 'search_knowledge' && hasCitations"
-                      size="small"
-                      type="primary"
-                      link
-                      class="tool-cite-btn"
-                      @click="openCitations"
-                    >
-                      <el-icon><Document /></el-icon>
-                      <span>引用 {{ relatedDocs.length }}</span>
-                    </el-button>
-                    <code v-if="s.args">{{ JSON.stringify(s.args) }}</code>
-                  </template>
-                  <template v-else>{{ s.content }}</template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </el-collapse-transition>
       </div>
 
       <!-- 相关文档：回答生成后，列出与用户问题最相关的检索来源 -->
@@ -145,8 +66,8 @@
 
 <script setup lang="ts">
 import {computed, nextTick, ref} from 'vue'
-import {ArrowDown, ArrowUp, Cpu, Document, FirstAidKit, Monitor, User, UserFilled} from '@element-plus/icons-vue'
-import type {AgentStep, Citation, Message} from '@/types'
+import {ArrowDown, ArrowUp, Document, FirstAidKit, Monitor, User, UserFilled} from '@element-plus/icons-vue'
+import type {Citation, Message} from '@/types'
 import {renderRichText} from '@/utils/richtext'
 import {useAuthStore} from '@/stores/auth'
 
@@ -155,7 +76,6 @@ const props = defineProps<{ message: Message }>()
 const auth = useAuthStore()
 
 const citeVisible = ref(true)
-const stepsVisible = ref(false)
 
 // 用户角色 → 图标映射（使用 Element Plus 实际存在的图标）
 const USER_ROLE_ICONS: Record<string, any> = {
@@ -189,92 +109,6 @@ const relatedDocs = computed(() => {
 
 // 是否有可高亮/跳转的引用
 const hasCitations = computed(() => relatedDocs.value.length > 0)
-
-
-// 从 Agent 轨迹的 meta 事件中提取「本次回答由哪个智能体产出」
-const agentRoleLabel = computed(() => {
-  const steps = props.message.agentSteps
-  if (!steps || steps.length === 0) return ''
-  const meta = steps.find((s) => s.type === 'meta')
-  return meta?.role_label || ''
-})
-
-// 提取 meta 事件中的角色 key（导诊/医生/护士/知识/护栏），用于配色
-const agentRoleKey = computed(() => {
-  const steps = props.message.agentSteps
-  if (!steps || steps.length === 0) return ''
-  const meta = steps.find((s) => s.type === 'meta')
-  return meta?.role || ''
-})
-
-// 角色 → 主题色（与后端 roles.py / sub_agents/ 的 label 语义一致）
-const ROLE_COLORS: Record<string, string> = {
-  guardrail: '#e74c3c', // 安全护栏：红
-  triage: '#16a085', // 导诊：青
-  doctor: '#27ae60', // 医生：绿
-  nurse: '#8e44ad', // 护士：紫
-  knowledge: '#2980b9', // 知识：蓝
-  schedule: '#e67e22', // 排班预约：橙
-  followup: '#1abc9c', // 随访：青绿
-}
-const DEFAULT_ROLE_COLOR = '#e67e22'
-
-// 步骤类型 → 标签 / 颜色
-const TYPE_LABELS: Record<string, string> = {
-  thought: '思考',
-  tool_call: '工具',
-  observation: '观察',
-  error: '错误',
-  meta: '智能体',
-  delegation: '委派',
-}
-const TYPE_COLORS: Record<string, string> = {
-  thought: '#8e44ad',
-  tool_call: '#409eff',
-  observation: '#67c23a',
-  error: '#f56c6c',
-  meta: '#e67e22',
-  delegation: '#1abc9c',
-}
-
-function roleColor(role?: string): string {
-  if (role && ROLE_COLORS[role]) return ROLE_COLORS[role]
-  return DEFAULT_ROLE_COLOR
-}
-
-// 角色徽标配色（文字 + 浅底 + 浅边框，hex + alpha）
-const badgeStyle = computed(() => {
-  const c = roleColor(agentRoleKey.value || undefined)
-  return {
-    color: c,
-    background: c + '1a',
-    borderColor: c + '55',
-  }
-})
-
-function stepColor(s: AgentStep): string {
-  if (s.type === 'meta' && s.role && ROLE_COLORS[s.role]) return ROLE_COLORS[s.role]
-  return TYPE_COLORS[s.type] || '#909399'
-}
-
-function stepLabel(s: AgentStep): string {
-  if (s.type === 'meta' && s.role_label) return s.role_label
-  return TYPE_LABELS[s.type] || s.type
-}
-
-// 时间线耗时：相对首步的时间偏移
-const firstTs = computed(() => {
-  const steps = props.message.agentSteps || []
-  const t = steps.find((s) => s.ts)?.ts
-  return t
-})
-
-function stepElapsed(s: AgentStep): string {
-  if (!s.ts || !firstTs.value) return ''
-  const d = (s.ts - firstTs.value) / 1000
-  if (d <= 0) return ''
-  return `+${d.toFixed(1)}s`
-}
 
 // 仅在回答完整（非流式）时渲染结构化富文本，避免流式半截标签导致排版错乱
 const renderedHtml = computed(() => {
@@ -325,15 +159,6 @@ function highlightCite(idx: number) {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     target.classList.add('cite-flash')
     window.setTimeout(() => target.classList.remove('cite-flash'), 1300)
-  })
-}
-
-// 时间线内「引用 N」按钮：展开引用区并滚动定位
-function openCitations() {
-  citeVisible.value = true
-  nextTick(() => {
-    const block = document.getElementById(`cites-${msgKey.value}`)
-    if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
 </script>
@@ -388,22 +213,6 @@ function openCitations() {
   max-width: 88%;
   display: flex;
   flex-direction: column;
-}
-
-/* Agent 角色标识 */
-.agent-role-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  font-size: 12px;
-  color: #e67e22;
-  background: #fdf1e7;
-  border: 1px solid #f6d9bf;
-  border-radius: 10px;
-  padding: 1px 9px;
-  margin-bottom: 5px;
-  user-select: none;
 }
 
 .msg-row.user .bubble-wrap {
@@ -524,133 +333,6 @@ function openCitations() {
 .citations {
   margin-top: 8px;
   width: 100%;
-}
-
-/* Agent 推理轨迹 */
-.agent-steps {
-  margin-top: 8px;
-  width: 100%;
-}
-
-.step-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #8e44ad;
-  cursor: pointer;
-  user-select: none;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #f5eefa;
-}
-
-.step-toggle:hover {
-  background: #efe0f7;
-}
-
-.step-arrow {
-  transition: transform 0.2s;
-}
-
-/* 竖向时间线 */
-.step-list {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-}
-
-.step-item {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 2px 0;
-}
-
-.step-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 14px;
-  flex-shrink: 0;
-}
-
-.step-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-top: 4px;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
-}
-
-.step-line {
-  flex: 1;
-  width: 2px;
-  background: #e4e7ed;
-  margin: 2px 0;
-}
-
-.step-content {
-  flex: 1;
-  min-width: 0;
-  background: #faf7fc;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 6px 10px;
-  margin-bottom: 6px;
-}
-
-.step-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
-}
-
-.step-tag {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 10px;
-  color: #fff;
-}
-
-.step-time {
-  font-size: 11px;
-  color: #b0b3b8;
-  font-variant-numeric: tabular-nums;
-}
-
-.step-body {
-  color: #606266;
-  word-break: break-word;
-  flex: 1;
-}
-
-.step-body code {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 5px;
-  background: #eef0f3;
-  border-radius: 4px;
-  font-size: 11px;
-  color: #555;
-  word-break: break-all;
-}
-
-.tool-retrieve {
-  margin-left: 6px;
-}
-
-/* 时间线内「引用 N」按钮 */
-.tool-cite-btn {
-  margin-left: 6px;
-  vertical-align: middle;
-  font-size: 11px;
 }
 
 /* 正文中 [n] 脚注高亮 */

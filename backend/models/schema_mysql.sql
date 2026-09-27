@@ -163,7 +163,6 @@ CREATE TABLE IF NOT EXISTS `messages`
     `reviewer_id`     INT UNSIGNED NULL,
     `reviewed_at`     DATETIME     NULL,
     `review_note`     VARCHAR(512) NULL,
-    `agent_steps`     TEXT         NULL COMMENT 'Agent ReAct 轨迹(JSON)',
     `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_messages_conv` (`conversation_id`)

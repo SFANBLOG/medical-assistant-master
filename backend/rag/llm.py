@@ -16,8 +16,13 @@ import requests
 from backend import config
 
 
-def _build_messages(question: str, context: str, history: list[dict] = None) -> list[dict]:
-    """构建 LLM 的 messages 数组。"""
+def _build_messages(
+    question: str,
+    context: str,
+    history: list[dict] = None,
+    user_context: str = "",
+) -> list[dict]:
+    """构建 LLM 的 messages 数组。user_context 为可选的用户画像片段。"""
     system_prompt = (
         "你是医智助手，一个专业的医疗知识助手。请根据下方检索到的医学知识库内容回答用户问题。\n"
         "回答要求：\n"
@@ -33,6 +38,8 @@ def _build_messages(question: str, context: str, history: list[dict] = None) -> 
     )
     if context:
         system_prompt += f"\n\n—— 以下为知识库检索到的参考内容 ——\n{context}\n—— 参考内容结束 ——"
+    if user_context:
+        system_prompt += f"\n\n—— 以下为当前用户背景（个性化参考，不要直接照搬） ——\n{user_context}"
 
     messages = [{"role": "system", "content": system_prompt}]
     if history:
@@ -87,14 +94,16 @@ def chat_stream(
     question: str,
     context: str = "",
     history: list[dict] = None,
+    user_context: str = "",
 ) -> Generator[str, None, None]:
     """
     流式聊天（SSE 格式）。
 
     生成器产出: {"content": "..."} 或 {"done": true} 格式的 JSON 字符串行。
+    user_context 为可选的用户画像片段，注入系统提示做个性化回答。
     """
     if config.OPENAI_API_KEY and config.OPENAI_API_KEY != "sk-xxx":
-        yield from _chat_stream_api(question, context, history)
+        yield from _chat_stream_api(question, context, history, user_context)
     else:
         yield from _chat_offline(question, context, history)
 
@@ -155,9 +164,10 @@ def _chat_stream_api(
     question: str,
     context: str,
     history: list[dict],
+    user_context: str = "",
 ) -> Generator[str, None, None]:
     """调用 OpenAI 兼容 API 的流式聊天。"""
-    messages = _build_messages(question, context, history)
+    messages = _build_messages(question, context, history, user_context)
     url = f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.OPENAI_API_KEY}",

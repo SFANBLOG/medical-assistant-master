@@ -8,8 +8,6 @@ from flask import Flask
 from flask_cors import CORS
 
 from backend import config
-from backend.mcp.server import mcp_bp
-from backend.routes.agent_bp import agent_bp
 # 导入蓝图
 from backend.routes.auth_bp import auth_bp
 from backend.routes.chat_bp import chat_bp
@@ -35,9 +33,7 @@ def create_app() -> Flask:
     app.register_blueprint(kb_bp, url_prefix="/api/kb")
     app.register_blueprint(medical_bp, url_prefix="/api/medical")
     app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(agent_bp, url_prefix="/api/agent")
     app.register_blueprint(review_bp, url_prefix="/api/review")
-    app.register_blueprint(mcp_bp, url_prefix="/api")
 
     # 统一错误处理（APIError / 404 / 405 / 未捕获异常）
     register_error_handlers(app)

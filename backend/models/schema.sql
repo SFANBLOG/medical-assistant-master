@@ -125,7 +125,6 @@ CREATE TABLE IF NOT EXISTS messages (
     reviewer_id     INTEGER     NULL,
     reviewed_at     DATETIME    NULL,
     review_note     VARCHAR(512) NULL,
-    agent_steps     TEXT        NULL,
     created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);

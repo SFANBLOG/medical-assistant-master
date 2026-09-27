@@ -4,7 +4,7 @@
 分层结构（自顶向下）：
   1) 用户与角色（紫）| 统一接入（蓝）| 外部模型依赖（绿）
   2) API 网关层（蓝）
-  3) 核心工作流：Agent v2 智能问答编排 1-12 步（橙黄区）+ Agent 核心机制侧栏（紫）
+  3) 核心工作流：RAG 智能问答流水线 1-12 步（橙黄区）+ RAG 核心机制侧栏（紫）
   4) 支撑层：知识工程 / 混合检索与重排 / 数据存储（绿）
   5) 基础带：大模型与基础能力 / 观测与评测 / 安全与权限 + 图例
 
@@ -116,30 +116,30 @@ def main():
     _zone(ax, 50, 100.5, 94, 6.6, ZONE_ENTRY, ZONE_EDGE_ENTRY)
     _lines(ax, 50, 100.5, 0, 0, [
         "API 网关层：Flask Blueprints · JWT 鉴权 · RBAC 角色校验（require_roles）· SSE 流式",
-        "/api/auth ｜ /api/chat ｜ /api/agent ｜ /api/kb ｜ /api/medical ｜ /api/dashboard ｜ /api/review ｜ /api/mcp(JSON-RPC)",
+        "/api/auth ｜ /api/chat ｜ /api/kb ｜ /api/medical ｜ /api/dashboard ｜ /api/review",
     ], fs=8.2, tc="#1f5aa8")
 
-    # ================= 3) 核心橙黄区：Agent v2 编排 12 步 =================
+    # ================= 3) 核心橙黄区：RAG 问答流水线 12 步 =================
     _zone(ax, 33.25, 68.75, 62.5, 51.5, ZONE_CORE, ZONE_EDGE_CORE,
-          title="核心：Agent v2 智能问答编排（1-12 步 · Supervisor 驱动）", fs_title=10)
+          title="核心：RAG 智能问答流水线（1-12 步 · chat_service 驱动）", fs_title=10)
     # 主入口箭头（API → 核心）
     _arrow(ax, 11.5, 97.3, 11.5, 92.6, color=LEG_BLUE, lw=2.0)
 
     # 12 个步骤（蛇形排布）
     steps = [
         # (行, x, 编号文本行1, 行2)
-        (1, 11.5, "1. 提问入口", "/api/chat · agent stream"),
-        (1, 33.5, "2. 安全护栏", "急危重症状先拦截"),
-        (1, 55.5, "3. 记忆注入", "画像 · 偏好 · 随访"),
-        (2, 55.5, "4. Supervisor 路由", "LLM JSON + 置信度"),
-        (2, 33.5, "5. 子智能体执行", "×6 按角色白名单"),
-        (2, 11.5, "6. 技能+工具调度", "Skill×5 · Tool×9"),
-        (3, 11.5, "7. 双路召回", "BM25∪BGE Top-30"),
-        (3, 33.5, "8. 融合重排 v4", "0.55/0.30/0.15 实体地板"),
-        (3, 55.5, "9. 上下文构建", "+citations 可追溯"),
-        (4, 55.5, "10. LLM 流式生成", "无 Key 离线兜底"),
-        (4, 33.5, "11. HITL 人工复核", "文档/回答/预约"),
-        (4, 11.5, "12. 持久化+审计", "agent_steps / audit_logs"),
+        (1, 11.5, "1. 提问入口", "POST /api/chat/stream"),
+        (1, 33.5, "2. 输入护栏", "急危重症状→急救指引"),
+        (1, 55.5, "3. 画像注入", "近期病史 · 预约"),
+        (2, 55.5, "4. 权限裁剪", "按角色算可见知识库"),
+        (2, 33.5, "5. 双路召回", "BM25∪BGE Top-30"),
+        (2, 11.5, "6. 融合重排 v4", "实体地板 · 证据分"),
+        (3, 11.5, "7. HITL 过滤", "仅 approved&ready"),
+        (3, 33.5, "8. 上下文构建", "build_context +引用"),
+        (3, 55.5, "9. LLM 流式生成", "无 Key 离线兜底"),
+        (4, 55.5, "10. 输出护栏", "ensure_disclaimer"),
+        (4, 33.5, "11. 持久化", "messages + citations"),
+        (4, 11.5, "12. 复核+审计", "review_status / audit_logs"),
     ]
     row_y = {1: 87, 2: 78, 3: 69, 4: 60}
     for r, x, t1, t2 in steps:
@@ -161,22 +161,22 @@ def main():
 
     # 结果输出带（橙区内底部）
     _note_box(ax, 33.5, 49, 56, 6.2,
-              ["结果输出：SSE 事件流（meta/thought/tool_call/observation/citations/message/done）→ 前端逐条渲染",
-               "持久化 messages + citations + agent_steps → 患者/群众回答进入复核队列（医护/admin 默认 approved）"],
+              ["结果输出：SSE 扁平帧（citations 引用帧 → content 增量帧 → done 结束帧，异常 error 帧）→ 前端打字机渲染",
+               "持久化 messages + citations → 患者/群众回答进入复核队列（医护/admin 默认 approved）"],
               "#ffffff", ZONE_EDGE_CORE, fs=7.4)
     _arrow(ax, 11.5, 56.6, 11.5, 52.3, color=LEG_ORANGE, lw=1.8)        # 12→输出带
 
-    # ================= 4) Agent 核心机制（右紫侧栏） =================
+    # ================= 4) RAG 核心机制（右紫侧栏） =================
     _zone(ax, 82, 68.75, 30, 51.5, ZONE_USER, ZONE_EDGE_USER,
-          title="Agent 核心机制（v2 特性）", fs_title=10)
+          title="RAG 核心机制", fs_title=10)
     _arrow(ax, 64.7, 74, 66.9, 74, color=LEG_PURPLE, lw=1.8)            # 核心区→侧栏
     mech = [
-        "Supervisor 智能调度：LLM 意图分类\n{agent, confidence, intent} · 离线 can_handle() 兜底",
-        "子智能体 ×6：导诊 / 医生 / 护士 /\n知识(默认) / 排班 / 随访",
-        "技能 Skill×5 + 工具 Tool×9\n（角色白名单过滤，可组合调用）",
-        "ReAct 推理循环：thought → tool_call\n→ observation，轨迹可观测",
-        "增强记忆：长期用户画像 + 历史偏好\n+ 随访提醒注入（ConversationMemory）",
-        "HITL 与审计：复核三通道（文档/回答/预约）\n+ agent_steps 全轨迹留痕",
+        "输入护栏：急危重症关键词命中\n直接返回急救指引（跳过检索与 LLM）",
+        "输出护栏：ensure_disclaimer\n每条回答强制附带免责声明",
+        "用户画像注入：get_enhanced_user_context\n近期住院诊断 / 预约 / 上次咨询摘要",
+        "混合检索：BM25(jieba) ∪ BGE 稠密向量\n融合重排 v4（实体地板 + 证据分）",
+        "多级降级：无 Key / 无 Milvus / 无 BGE\n自动走离线规则链路",
+        "HITL 与审计：复核三通道（文档/回答/预约）\naudit_logs 全量留痕",
     ]
     mech_y = [88.6, 82.2, 75.8, 69.4, 63.0, 56.6]
     for txt, yy in zip(mech, mech_y):
@@ -221,8 +221,8 @@ def main():
     ], fs=7.3, tc="#8f2f2f")
     _zone(ax, 36, 14.5, 20, 13, ZONE_BASE, ZONE_EDGE_BASE, title="观测与评测", fs_title=9)
     _lines(ax, 36, 14.2, 0, 0, [
-        "· SSE 事件逐条可见 + /api/agent/trace",
-        "· agent_steps 推理轨迹入库可回放",
+        "· SSE 帧级可观测（citations/content/done）",
+        "· citations 引用溯源到文档片段",
         "· 本地 42 问评测：重排 Hit@1=100%",
         "· 平均分 ≈0.94 · 阈值 0.45 干净切分",
     ], fs=7.3, tc="#8f2f2f")
@@ -243,7 +243,7 @@ def main():
     legend = [
         (LEG_PURPLE, "紫色箭头：用户输入 / 角色分流"),
         (LEG_BLUE, "蓝色箭头：API 请求 / SSE 返回"),
-        (LEG_ORANGE, "橙色箭头：Agent 核心编排流"),
+        (LEG_ORANGE, "橙色箭头：RAG 核心问答流水线"),
         (LEG_GREEN, "绿色箭头：数据流 / 持久化"),
         (LEG_RED, "红框/红线：人工复核干预(HITL)"),
     ]
@@ -252,12 +252,12 @@ def main():
         ax.plot([69.5, 73.5], [yy, yy], color=color, lw=2.4, zorder=3)
         ax.text(74.2, yy, txt, fontsize=7.6, ha="left", va="center", color="#333", zorder=3)
     ax.text(82, 5.2,
-            "说明：1-12 步为一次 Agent 问答的主干流水线；人工复核（红）贯穿文档入库、AI 回答与写操作三个环节，全部动作留痕审计。",
+            "说明：1-12 步为一次 RAG 问答的主干流水线；人工复核（红）贯穿文档入库、AI 回答与写操作三个环节，全部动作留痕审计。",
             fontsize=7.4, ha="center", va="center", color="#666", zorder=3)
 
     # 底部标题
     ax.text(50, 2.2,
-            "医智助手 · 基于 RAG + Agent 的医疗知识库智能问答系统 —— 系统总体架构",
+            "医智助手 · 基于 RAG 的医疗知识库智能问答系统 —— 系统总体架构",
             fontsize=11, ha="center", va="center", color="#1a1a1a", weight="bold", zorder=3)
 
     path = os.path.join(OUT, "0-系统总体架构图.png")

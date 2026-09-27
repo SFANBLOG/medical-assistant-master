@@ -128,11 +128,6 @@ export function chatStreamUrl(convId: string): string {
   return `/api/chat/stream/${convId}`
 }
 
-/** SSE 流式 Agent 问答 URL（智能体模式） */
-export function agentStreamUrl(convId: string): string {
-  return `/api/agent/stream/${convId}`
-}
-
 /** 原生 fetch 所需的认证请求头 */
 export function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('medical_token') || ''

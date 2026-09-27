@@ -1,9 +1,11 @@
 """
-聊天服务：会话管理 + SSE 流式问答。
+聊天服务：会话管理 + RAG SSE 流式问答（含安全护栏与用户画像注入）。
 """
+import json
 import uuid
 from typing import Generator
 
+from backend.rag import guardrails, memory
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend.rag.retriever import retrieve, build_context
 from backend.utils.db import fetchone, fetchall, execute
@@ -83,6 +85,25 @@ def delete_conversation(conv_id: str, user_id: int) -> bool:
     return True
 
 
+def _save_assistant_message(conv_id: str, answer_text: str, citations: list[dict]) -> None:
+    """保存 AI 回答及其引用来源。"""
+    execute(
+        "INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'assistant', %s)",
+        (conv_id, answer_text)
+    )
+    msg_row = fetchone(
+        "SELECT id FROM messages WHERE conversation_id = %s AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+        (conv_id,)
+    )
+    msg_id = msg_row["id"] if msg_row else 0
+    for c in citations:
+        execute(
+            "INSERT INTO citations (message_id, document_id, chunk_index, source_text, title, similarity) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (msg_id, c["doc_id"], c["chunk_index"], c["source_text"], c["title"], c["similarity"])
+        )
+
+
 def chat_stream_sse(
     conv_id: str,
     user_id: int,
@@ -91,13 +112,13 @@ def chat_stream_sse(
     kb_id: int = None,
 ) -> Generator[str, None, None]:
     """
-    SSE 流式问答。
+    RAG SSE 流式问答。
 
     1. 保存用户消息
-    2. 检索知识库
-    3. 构建上下文
+    2. 安全护栏：急危重症关键词命中 → 直接返回急救指引（不走检索/LLM）
+    3. 检索知识库 + 构建上下文 + 注入用户画像
     4. 调用 LLM 流式生成
-    5. 保存 AI 回答与引用
+    5. 输出护栏：确保免责声明，保存 AI 回答与引用
     """
     # 1. 保存用户消息。若最后一条消息是同内容且无回答（上次生成中断），
     #    视为重试，不重复入库，避免同题重复问题堆积。
@@ -121,13 +142,21 @@ def chat_stream_sse(
         (new_title, conv_id),
     )
 
-    # 2. 检索
+    # 2. 输入护栏：急危重症直接给出急救指引，跳过检索与 LLM
+    emergency = guardrails.detect_emergency(question)
+    if emergency:
+        yield f"data: {json.dumps({'citations': []}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'content': emergency}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
+        _save_assistant_message(conv_id, _clean_answer_text(emergency), [])
+        return
+
+    # 3. 检索 + 构建上下文 + 用户画像
     hits = retrieve(question, role, user_id, kb_id=kb_id)
-
-    # 3. 构建上下文
     context = build_context(hits)
+    user_context = memory.get_enhanced_user_context({"user_id": user_id})
 
-    # 4. 获取历史对话
+    # 获取历史对话
     history_rows = fetchall(
         "SELECT role, content FROM messages WHERE conversation_id = %s ORDER BY id DESC LIMIT 6",
         (conv_id,)
@@ -145,14 +174,14 @@ def chat_stream_sse(
             "similarity": h["similarity"],
         })
 
-    yield f"data: {__import__('json').dumps({'citations': citations}, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps({'citations': citations}, ensure_ascii=False)}\n\n"
 
-    # 5. 流式生成回答
+    # 4. 流式生成回答
     full_answer = []
-    for chunk in chat_stream(question, context, history):
+    for chunk in chat_stream(question, context, history, user_context):
         yield f"{chunk}\n\n"
         try:
-            data = __import__("json").loads(chunk[6:])  # 去掉 "data: " 前缀
+            data = json.loads(chunk[6:])  # 去掉 "data: " 前缀
             if "content" in data:
                 full_answer.append(data["content"])
         except Exception:
@@ -160,25 +189,14 @@ def chat_stream_sse(
 
     answer_text = _clean_answer_text("".join(full_answer))
 
-    # 6. 保存 AI 回答
-    execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'assistant', %s)",
-        (conv_id, answer_text)
-    )
-    # 获取刚插入的消息 ID
-    msg_row = fetchone(
-        "SELECT id FROM messages WHERE conversation_id = %s AND role = 'assistant' ORDER BY id DESC LIMIT 1",
-        (conv_id,)
-    )
-    msg_id = msg_row["id"] if msg_row else 0
+    # 5. 输出护栏：确保免责声明。若原文缺失，补发一个 content 增量帧后再落库。
+    final_answer = guardrails.ensure_disclaimer(answer_text)
+    if final_answer != answer_text:
+        delta = final_answer[len(answer_text):]
+        yield f"data: {json.dumps({'content': delta}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
 
-    # 保存引用
-    for c in citations:
-        execute(
-            "INSERT INTO citations (message_id, document_id, chunk_index, source_text, title, similarity) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (msg_id, c["doc_id"], c["chunk_index"], c["source_text"], c["title"], c["similarity"])
-        )
+    _save_assistant_message(conv_id, final_answer, citations)
 
 
 def get_chat_history(user_id: int, limit: int = 50) -> list[dict]:

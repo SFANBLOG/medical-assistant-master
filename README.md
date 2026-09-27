@@ -1,6 +1,6 @@
 # 医智助手 · Medical Assistant
 
-> 基于 **RAG + 多智能体（Multi-Agent）+ MCP + Skills** 的医疗知识库智能问答系统，面向医院信息系统教学与演示场景。
+> 基于 **RAG（检索增强生成）** 的医疗知识库智能问答系统，面向医院信息系统教学与演示场景。
 > 内置 **12 个疾病知识库、483 篇医学文档**，提供 **5 种角色门户**，开箱即用：Docker 一键启动，无外部大模型 Key、无 Milvus 也能完整运行。
 
 ![license](https://img.shields.io/badge/license-MulanPSL--2.0-blue)
@@ -18,7 +18,7 @@
 - [二、界面预览](#二界面预览)
 - [三、技术栈](#三技术栈)
 - [四、系统架构](#四系统架构)
-- [五、Agent 与 MCP 架构](#五agent-与-mcp-架构)
+- [五、安全护栏与上下文增强](#五安全护栏与上下文增强)
 - [六、人工复核（HITL）与审计](#六人工复核hitl与审计)
 - [七、角色与权限](#七角色与权限)
 - [八、快速开始（Docker / 本地 / 生产）](#八快速开始docker--本地--生产)
@@ -38,18 +38,15 @@
 
 | 能力 | 说明 |
 |------|------|
-| **多智能体（Agent v2）** | Supervisor 调度中心按意图路由至 6 个子智能体（导诊 / 医生 / 护士 / 知识 / 排班预约 / 随访），在线 LLM 分类 + 离线关键词双路径降级，全程不中断服务 |
-| **技能系统（Skills）** | 5 个可复用技能（医学问答 / 导诊 / 预约 / 病历查询 / 健康宣教），与 Tool（单函数）、Agent（独立推理）分层解耦 |
-| **MCP 协议支持** | 内置 MCP Server（JSON-RPC 2.0），把 9 个工具与知识库文档资源标准化暴露；Client 可对接任意外部 MCP 服务 |
 | **混合检索 RAG** | BM25 稀疏检索 + BGE 稠密向量 + 融合重排 v4（实体地板 / 证据分 / 泛化词剔除），答案可溯源到具体文档片段，生产等价评测 Hit@1 = 100% |
-| **ReAct 思考可视化** | 智能体"规划 → 工具调用 → 观察 → 合成"全过程以 SSE 事件流实时推送，前端时间线可折叠查看 |
-| **人工复核 HITL** | AI 回答、知识库文档与 AI 发起的预约写操作均需 `pending → approved` 才生效，未复核内容不进入 RAG 上下文 |
+| **安全护栏** | 急危重症关键词命中即直接返回急救指引（跳过检索与 LLM）；最终回答强制附带免责声明，医疗场景安全兜底 |
+| **用户画像注入** | 回答前自动检索当前用户近期病史 / 预约并注入系统提示，实现个性化回答（如过敏史提醒） |
+| **人工复核 HITL** | AI 回答、知识库文档与预约写操作均需 `pending → approved` 才生效，未复核内容不进入 RAG 上下文 |
 | **全链路审计** | 复核动作与关键写操作落 `audit_logs`，管理员可分页追溯（操作人 / 角色 / 来源 IP） |
-| **五级降级容错** | 无 LLM Key、无 Milvus、无 BGE 模型、无 GPU 均自动降级到离线规则链路——"任何时候都能跑起来" |
+| **多级降级容错** | 无 LLM Key、无 Milvus、无 BGE 模型、无 GPU 均自动降级到离线规则链路——"任何时候都能跑起来" |
 | **双数据库** | MySQL 8（生产默认）与 SQLite（零依赖演示）通过 `DB_TYPE` 一键切换 |
-| **双工作模式** | 前端可一键切换「智能问答 / 智能体模式」；后端 `AGENT_MODE=v1|v2` 特性开关兼容新旧编排器 |
 
-> 完整架构设计文档见 [`面试准备/项目完整架构与流程图.md`](面试准备/项目完整架构与流程图.md)；系统总体架构图见 [`面试准备/0-系统总体架构图.png`](面试准备/0-系统总体架构图.png)，10 张业务流程图见 [`面试准备/流程图/`](面试准备/流程图)，答辩材料见 [`面试准备/医智助手-项目答辩.pptx`](面试准备/医智助手-项目答辩.pptx) 与 [`面试准备/面试要点.md`](面试准备/面试要点.md)。
+> 完整架构设计文档见 [`面试准备/项目完整架构与流程图.md`](面试准备/项目完整架构与流程图.md)；系统总体架构图见 [`面试准备/0-系统总体架构图.png`](面试准备/0-系统总体架构图.png)，9 张业务流程图见 [`面试准备/流程图/`](面试准备/流程图)，答辩材料见 [`面试准备/医智助手-项目答辩.pptx`](面试准备/医智助手-项目答辩.pptx) 与 [`面试准备/面试要点.md`](面试准备/面试要点.md)。
 
 ---
 
@@ -88,17 +85,15 @@
 ```mermaid
 flowchart TB
     subgraph FE["前端 Vue 3 · 端口 3000"]
-        C["Chat.vue<br/>智能问答 / 智能体模式开关"]
-        V["ChatMessage.vue<br/>思考过程时间线"]
+        C["Chat.vue<br/>RAG 智能问答"]
+        V["ChatMessage.vue<br/>引用来源面板"]
         P["15 个业务页面<br/>档案 / 预约 / 住院 / 排班 / 看板 ..."]
     end
 
     subgraph BE["后端 Flask · 端口 8010"]
-        R["routes/ 蓝图层<br/>auth chat kb medical dashboard agent review mcp"]
+        R["routes/ 蓝图层<br/>auth chat kb medical dashboard review"]
         S["services/ 业务层<br/>chat kb medical doctor nurse audit schedule ..."]
-        A["agent/ 编排层<br/>supervisor · base_agent · sub_agents · skills · tools"]
-        M["mcp/ 协议层<br/>server · client · tools_registry · resources"]
-        G["rag/ 检索与生成<br/>bm25 embedder vectorstore reranker retriever llm"]
+        G["rag/ 检索与生成<br/>bm25 embedder vectorstore reranker<br/>retriever llm guardrails memory"]
         D["utils/db.py<br/>MySQL / SQLite 自动切换"]
     end
 
@@ -110,9 +105,6 @@ flowchart TB
 
     FE -->|"SSE 流式 + REST"| R
     R --> S
-    R --> A
-    R --> M
-    A --> G
     S --> G
     S --> D
     G --> VS
@@ -123,6 +115,8 @@ flowchart TB
 
 ```
 用户提问
+   │
+   ├─ 输入护栏：命中急危重症关键词 → 直接返回急救指引（跳过检索与 LLM）
    │
    ├─ 权限裁剪：按角色（patient/public/nurse/doctor/admin）算出可见知识库范围
    │
@@ -136,112 +130,45 @@ flowchart TB
    │
    ├─ HITL 过滤：仅保留 review_status='approved' 且 status='ready' 的文档
    │
-   ├─ 上下文组装：build_context() 拼装带来源标注的片段
+   ├─ 上下文组装：build_context() 拼装带来源标注的片段 + 注入用户画像（近期病史/预约）
    │
-   └─ 流式生成：SSE 逐段推送 + citations 引用来源
+   ├─ 流式生成：SSE 逐段推送 + citations 引用来源
+   │
+   └─ 输出护栏：确保回答末尾附带免责声明
 ```
 
 ---
 
-## 五、Agent 与 MCP 架构
+## 五、安全护栏与上下文增强
 
-前端「智能咨询」页右上角开关即可进入**智能体模式**（后端 `AGENT_MODE=v2`，默认）。请求走 `/api/agent/stream/<conv_id>`。
+RAG 主链路（`/api/chat/stream/<conv_id>`）在检索问答前后叠加三层医疗安全能力，全部实现在 `backend/rag/` 内：
 
-### 5.1 Supervisor + 6 个子智能体
+### 5.1 输入护栏：急危重症拦截（`rag/guardrails.py`）
 
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant B as agent_bp
-    participant O as orchestrator
-    participant SV as Supervisor
-    participant SA as 子智能体(6)
-    participant L as LLM / 规则
+用户问题命中紧急症状关键词（胸痛 / 呼吸困难 / 昏迷 / 大出血等）时，**直接返回急救指引**（拨打 120、原地休息、CPR 等），跳过检索与 LLM 生成，避免危重情况下的常规问答延误救治。
 
-    U->>B: POST /api/agent/stream/{conv_id}
-    B->>O: run_agent(question, role, kb_id)
-    O->>O: 护栏检查（紧急症状/免责声明）+ 记忆注入
-    O->>SV: 意图分类（LLM JSON / 离线关键词+置信度）
-    SV-->>O: SSE: meta {role, role_label} + thought
-    SV->>SA: 委派（导诊/医生/护士/知识/排班/随访）
-    loop 最多 6 步（ReAct）
-        SA->>L: messages + tools(JSON Schema)
-        L-->>SA: thought / tool_calls
-        SA-->>O: SSE: thought / tool_call / observation
-    end
-    SA->>O: 合成最终回答
-    O-->>B: SSE: citations → message(流式) → done
-```
+### 5.2 输出护栏：免责声明（`rag/guardrails.py`）
 
-| 子智能体 | key | 擅长场景 | 典型关键词 |
-|----------|-----|----------|------------|
-| 导诊智能体 | `triage` | 症状 → 科室推荐 | 挂哪个科 / 看什么科 / 分诊 |
-| 医生智能体 | `doctor` | 诊断参考、用药建议、病历分析 | 怎么治 / 吃什么药 / 是什么病 |
-| 护士智能体 | `nurse` | 护理指导、康复宣教 | 怎么护理 / 注意事项 / 用药指导 |
-| 知识智能体 | `knowledge` | 纯知识库问答（默认兜底） | 疾病 / 症状 / 健康知识 |
-| 排班预约智能体 | `schedule` | 排班查询、预约管理 | 排班 / 挂号 / 出诊时间 |
-| 随访智能体 | `followup` | 复诊随访、慢病管理、术后跟踪 | 复查 / 随访 / 慢病 / 多久复查 |
+LLM 系统提示已要求回答附带免责提醒；落库前再执行 `ensure_disclaimer()` 兜底——若最终回答缺失免责内容，自动补发一个 SSE 增量帧追加标准免责声明，保证每条 AI 回答都明确"不能替代执业医师诊断"。
 
-路由策略：**在线** 由 LLM 输出 `{"agent", "confidence", "intent"}` JSON 分类；**离线** 遍历 `can_handle()` 置信度，全部低于 0.3 时回退到原有关键字路由（`roles.py`，兼容 v1）。无论哪条路径失败都降级到另一条，保证可用性。
+### 5.3 用户画像注入（`rag/memory.py`）
 
-### 5.2 技能系统（Skills）
+回答前通过 `get_enhanced_user_context()` 检索当前用户的：
 
-技能是**多步骤、可复用**的能力单元（区别于 Tool 单函数、Agent 完整推理循环），由注册表 `SKILL_REGISTRY` 统一管理：
+- 身份与近期住院诊断（`hospitalizations` 表最近 3 条）；
+- 近期预约记录（`appointments` 表最近 3 条）；
+- 上次咨询摘要（最近一条 AI 回答前 100 字）。
 
-| 技能 | key | 用途 |
-|------|-----|------|
-| 医学问答 | `medical_qa` | 知识库检索问答主流程 |
-| 导诊 | `triage` | 症状-科室映射与分诊建议 |
-| 预约挂号 | `appointment` | 预约流程编排（写操作走复核） |
-| 病历查询 | `patient_records` | 患者病历 / 住院记录查询 |
-| 健康宣教 | `health_education` | 康复 / 日常健康知识输出 |
+拼装为「用户长期记忆」片段注入系统提示，让回答具备个性化（医疗安全硬需求，如过敏史提醒）。
 
-### 5.3 内置工具（9 个）
+### 5.4 SSE 事件协议
 
-| 工具 | 说明 | 数据来源 |
-|------|------|----------|
-| `search_knowledge` | 检索医学知识库，返回带相关度的片段 | `rag/retriever.py` 混合检索 |
-| `triage_departments` | 按症状推荐就诊科室 | 内置分诊知识 |
-| `get_weather` | 按经纬度查当前天气与今日气温 | Open-Meteo（免 Key） |
-| `reverse_geocode` | 经纬度反查城市名 | BigDataCloud（免 Key） |
-| `query_hospitalizations` | 按患者 / 科室 / 诊断查住院信息 | `hospitalizations` 表 |
-| `query_patient_records` | 病历汇总（当前用户或按关键词） | 住院记录 |
-| `query_appointments` | 按患者 / 科室查预约信息 | `appointments` 表 |
-| `query_schedules` | 查医生排班 / 可用时段 | `schedules` 表 |
-| `create_appointment` | **写操作**：提交预约请求待医生复核 | `appointment_requests`（pending） |
-
-> 写护栏：`create_appointment` 不直接建单，而是写入 `appointment_requests`（`review_status='pending'`），医生批准后才正式生效并落审计——医疗场景写操作强制 HITL。
-
-### 5.4 MCP（Model Context Protocol）
-
-内置 **MCP Server**（Flask 蓝图，JSON-RPC 2.0 over HTTP，端点 `/api/mcp`）：
-
-| 方法 | 说明 |
-|------|------|
-| `initialize` / `ping` | 握手与会话保活（协议版本 `2024-11-05`） |
-| `tools/list` | 暴露全部 9 个工具的标准 schema |
-| `tools/call` | 桥接执行 `tools.py` 的 `run_tool()` |
-| `resources/list` / `resources/read` | 把知识库文档暴露为可读资源 |
-
-配套 `backend/mcp/client.py`（MCP Client）可连接任意外部 MCP 服务；`tools_registry.py` 负责 Tool → MCP schema 适配。
-
-### 5.5 SSE 事件协议
-
-| 事件 | 载荷 | 说明 |
+| 帧 | 载荷 | 说明 |
 |------|------|------|
-| `meta` | `{role, role_label}` | Supervisor 委派元信息（前端展示"由 XX 智能体处理"） |
-| `thought` | `{content}` | 模型 / 规则思考文本 |
-| `tool_call` | `{name, args}` | 调用了哪个工具、入参是什么 |
-| `observation` | `{content}` | 工具返回（截断至 1500 字符） |
-| `citations` | `{citations: [...]}` | 最终回答的引用来源 |
-| `message` | `{content}` | 最终回答的流式增量 |
-| `done` | — | 结束 |
-| `error` | `{content}` | 出错或达到最大步数 |
-
-### 5.6 记忆系统
-
-- **长期记忆**：`get_enhanced_user_context()` 注入用户画像与上次咨询摘要；
-- **会话工作记忆**：`ConversationMemory` 缓存会话内工具结果，支持追问省略指代。
+| `citations` | `{citations: [...]}` | 检索到的引用来源（回答开始前推送） |
+| `content` | `{content}` | 最终回答的流式增量 |
+| `done` | `{done: true}` | 结束 |
+| `error` | `{error}` | 出错（随后自动降级到离线兜底生成） |
 
 ---
 
@@ -319,7 +246,7 @@ docker compose logs -f backend
 | `minio` | minio/minio:latest | —（内部网络） | Milvus 对象存储 |
 | `milvus` | milvusdb/milvus:v2.5.6 | 19530 / 9091 | 向量数据库（语义检索） |
 | `attu` | zilliz/attu:v2.5.12 | 8000 → 3000 | Milvus 可视化管理台 |
-| `backend` | 本地构建 `backend/Dockerfile.backend` | 8010 → 8010 | Flask RAG + Agent（Gunicorn 4 进程 × 2 线程） |
+| `backend` | 本地构建 `backend/Dockerfile.backend` | 8010 → 8010 | Flask RAG 问答（Gunicorn 4 进程 × 2 线程） |
 | `frontend` | 本地构建 `frontend/Dockerfile.frontend` | 3000 → 80 | Nginx 托管静态资源并反代后端 |
 
 **访问地址**
@@ -419,14 +346,13 @@ gunicorn -c gunicorn.conf.py wsgi:app     # 0.0.0.0:8010，4 进程 × 2 线程�
 | `OPENAI_EMBED_MODEL` | 空 | BGE 模型目录或 HF id（`auto` = 在模型目录自动检测）；留空用哈希向量 |
 | `EMBED_DIM` | `768` | 须与向量模型维度一致 |
 
-**大模型与 Agent**
+**大模型**
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `OPENAI_BASE_URL` | `https://api.deepseek.com/v1` | 任意 OpenAI 兼容端点 |
 | `OPENAI_API_KEY` | 空 | 留空即启用离线兜底链路 |
 | `OPENAI_CHAT_MODEL` | `deepseek-chat` | 聊天模型 |
-| `AGENT_MODE` | `v2` | `v2` = Supervisor 多智能体；`v1` = 原关键字路由（兼容旧版） |
 
 **RAG 参数**
 
@@ -476,12 +402,10 @@ gunicorn -c gunicorn.conf.py wsgi:app     # 0.0.0.0:8010，4 进程 × 2 线程�
 |------|------|----------|
 | `auth_bp` | `/api/auth` | `POST /login` `POST /register` `GET /me` · 用户 CRUD |
 | `chat_bp` | `/api/chat` | 会话 CRUD · `POST /stream/<conv_id>`（SSE）· `GET /history` |
-| `agent_bp` | `/api/agent` | `GET /tools` · `POST /stream/<conv_id>`（SSE，智能体模式） |
 | `kb_bp` | `/api/kb` | 知识库 CRUD · `GET\|POST /<kb_id>/documents`（单文件）· `POST /<kb_id>/documents/batch`（批量 ≤200/次）· `DELETE /documents/<id>` |
 | `medical_bp` | `/api/medical` | `hospitalizations` `bills` `appointments` `nursing-records` `schedules` |
 | `dashboard_bp` | `/api/dashboard` | `overview` `users` `knowledge-bases` `business` `chat` `revenue` 及两类分布 |
 | `review_bp` | `/api/review` | `GET /answers` `POST /answers/<id>/approve\|reject` · `GET /documents` `POST /documents/<id>/approve\|reject` · `GET /appointments` `POST /appointments/<id>/approve\|reject` · `GET /audit` |
-| `mcp_bp` | `/api/mcp` | JSON-RPC 2.0：`initialize` `ping` `tools/list` `tools/call` `resources/list` `resources/read` |
 | — | `/api/health` | 健康检查，返回 `{status, db_type}` |
 | — | `/api/vector/status` | 向量库后端、嵌入模型、聊天模型 |
 
@@ -491,13 +415,13 @@ gunicorn -c gunicorn.conf.py wsgi:app     # 0.0.0.0:8010，4 进程 × 2 线程�
 
 ## 十二、数据库设计
 
-启动时由 `init_schema()` 幂等建表，共 **16 张业务表**；Agent 写操作所需的 `appointment_requests`（预约复核队列）由启动迁移自动创建，SQLite / MySQL 双兼容。
+启动时由 `init_schema()` 幂等建表，共 **16 张业务表**；预约复核队列 `appointment_requests` 由启动迁移自动创建，SQLite / MySQL 双兼容。
 
 | 分类 | 表 |
 |------|-----|
 | 身份 | `users` |
 | 知识库 | `knowledge_bases` `documents` `chunks` `sub_chunks` `bm25_terms` `chunk_vectors` |
-| 问答 | `conversations` `messages`（含 `review_status`、`agent_steps`）`citations` |
+| 问答 | `conversations` `messages`（含 `review_status`）`citations` |
 | 业务 | `hospitalizations` `bills` `appointments` `nursing_records` `schedules` |
 | 合规 | `audit_logs` |
 | 复核队列 | `appointment_requests`（启动自动迁移创建） |
@@ -515,29 +439,13 @@ gunicorn -c gunicorn.conf.py wsgi:app     # 0.0.0.0:8010，4 进程 × 2 线程�
 medical_assistant-master/
 ├── backend/                          # Python 后端
 │   ├── app.py                        # create_app() + init_database()（建库/播种/向量预热）
-│   ├── config.py                     # 全局配置（.env 加载，AGENT_MODE 特性开关）
+│   ├── config.py                     # 全局配置（.env 加载）
 │   ├── __main__.py                   # 本地启动入口 python -m backend
 │   ├── seed.py / reindex.py / enrich_docs.py / download_model.py
-│   ├── agent/                        # ★ 多智能体编排层
-│   │   ├── orchestrator.py           #   run_agent() 入口：护栏 → 记忆 → v2/v1 分支
-│   │   ├── supervisor.py             #   Supervisor 调度中心（LLM 分类 + 离线降级）
-│   │   ├── base_agent.py             #   子智能体抽象基类（ReAct 生命周期）
-│   │   ├── sub_agents/               #   6 个子智能体（triage/doctor/nurse/knowledge/schedule/followup）
-│   │   ├── skills/                   #   5 个技能（medical_qa/triage/appointment/patient_records/health_education）
-│   │   ├── tools.py                  #   9 个工具（Tool 类 + 注册表 + run_tool）
-│   │   ├── memory.py                 #   长期画像 + ConversationMemory 工作记忆
-│   │   ├── guardrails.py             #   紧急症状拦截 + 免责声明
-│   │   ├── roles.py                  #   v1 关键字路由（AGENT_MODE=v1 兼容）
-│   │   ├── service.py                #   SSE 事件封装与落库
-│   │   └── eval/run_eval.py          #   Agent 离线评测（覆盖率报表）
-│   ├── mcp/                          # ★ MCP 协议层
-│   │   ├── server.py                 #   MCP Server（JSON-RPC 2.0，Flask 蓝图）
-│   │   ├── client.py                 #   MCP Client（可连外部服务）
-│   │   ├── tools_registry.py         #   Tool → MCP schema 适配
-│   │   └── resources.py              #   知识库文档资源
-│   ├── routes/                       # 蓝图：auth chat kb medical dashboard agent review
+│   ├── routes/                       # 蓝图：auth chat kb medical dashboard review
 │   ├── services/                     # 业务层：auth chat kb medical doctor nurse schedule audit ...
 │   ├── rag/                          # 检索生成：bm25 embedder vectorstore reranker retriever chunker llm
+│   │                                 #   + guardrails（急诊拦截/免责声明）+ memory（用户画像注入）
 │   ├── models/                       # schema.sql / schema_mysql.sql（纯 SQL，非 ORM）
 │   ├── utils/                        # db jwt_utils file_parser text_utils errors ...
 │   ├── data/                         # uploads（医学文档，按知识库/公开私有分目录）· ai_models（BGE 嵌入/重排模型）
@@ -565,21 +473,7 @@ medical_assistant-master/
 
 ## 十四、评测与复现
 
-### 14.1 Agent 离线评测（`backend/agent/eval/run_eval.py`）
-
-完全离线（桩替换 LLM / Milvus / DB），覆盖 5 个维度并生成覆盖率报表（`coverage_report.json` / `.html`）：
-
-1. 安全红队：紧急症状必须被护栏拦截；
-2. 引用覆盖：知识类问题必须调用 `search_knowledge` 且带引用；
-3. 工具轨迹 / 角色路由：导诊 → `triage_departments`、医生 → `query_patient_records` 等；
-4. 写操作 HITL：`create_appointment` 只写入 `appointment_requests(pending)`；
-5. 安全护栏触发率 / 路由准确率 / 引用覆盖率综合打分。
-
-```bash
-python backend/agent/eval/run_eval.py     # 退出码：全部通过为 0
-```
-
-### 14.2 重排 A/B 评测（`scripts/eval_rerank_local.py`）
+### 14.1 重排 A/B 评测（`scripts/eval_rerank_local.py`）
 
 自包含脚本（真实 embedder + 切分器 + BM25 + `rerank()`，无需 MySQL / Milvus / LLM），内置 20 条人工标注医学查询，一键复现融合重排 v4 指标：
 

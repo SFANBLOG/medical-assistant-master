@@ -142,3 +142,16 @@ backend/data/numpy_store.pkl
 
 .pocketbay_deploy.sh
 backend/data/*.db
+
+# ===================== 运行产物 / 本地素材（不入库） =====================
+# 本地下载的模型权重目录（体积大，按需重新下载）
+backend/data/ai_models/
+# 一次性备份目录与向量库备份文件
+backend/data/uploads_backup_*/
+backend/data/*.pkl.bak_*
+# 脚本运行状态与零散图片
+.expand_progress.json
+attention.png
+loss_curve.png
+# AI 助手计划/会话中间产物（本地文档）
+.trae/

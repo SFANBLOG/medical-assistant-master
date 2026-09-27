@@ -187,11 +187,6 @@ RERANK_MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "auto")
 #   - 设为 true 且模型存在时，CE 仅作为"增强boost"，绝不拉低融合给出高分的相关文档。
 RERANK_USE_CE = os.getenv("RERANK_USE_CE", "false").lower() in ("1", "true", "yes", "on")
 
-# ---- Agent 架构 ----
-# v1: 原有单体编排器（roles.py 关键字路由）
-# v2: 新架构（Supervisor + 子智能体 + 技能系统）
-AGENT_MODE = os.getenv("AGENT_MODE", "v2").lower()
-
 # ---- 服务端口 ----
 # 优先读平台注入的 PORT（PocketBay 等平台约定），回退 BACKEND_PORT / 默认 8010
 BACKEND_PORT = int(os.getenv("PORT", os.getenv("BACKEND_PORT", "8010")))
