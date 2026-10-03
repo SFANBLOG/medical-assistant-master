@@ -1,11 +1,17 @@
 """
-JWT 认证工具：签发与验证 token。
+JWT 认证工具：签发/验证 token，并以 FastAPI 依赖形式提供登录态与角色门控。
+
+迁移说明：原 Flask 版用 @login_required / @role_required 装饰器把 payload 写入 g，
+现改为依赖注入——端点通过 `user: dict = Depends(get_current_user)` 直接拿到已校验的
+payload；角色受限用 `Depends(require_roles("admin", ...))`。鉴权失败抛 HTTPException，
+由 backend.utils.errors 的统一处理器归一成 {"error": ...} 响应。
 """
 import datetime
-import functools
 
 import jwt
-from flask import request, jsonify, g
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from backend.config import JWT_SECRET, JWT_EXP_HOURS
 
@@ -30,48 +36,30 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-def get_token_from_request():
-    """从 Authorization 头提取 token。"""
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:]
-    return None
+# auto_error=False：缺失/非 Bearer 头时返回 None，交由下方依赖统一产出中文错误
+_security = HTTPBearer(auto_error=False)
 
 
-def login_required(f):
-    """装饰器：要求登录。"""
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        token = get_token_from_request()
-        if not token:
-            return jsonify({"error": "未提供认证令牌"}), 401
-        payload = decode_token(token)
-        if not payload:
-            return jsonify({"error": "认证令牌无效或已过期"}), 401
-        g.current_user = payload
-        return f(*args, **kwargs)
-    return wrapper
+def _extract_payload(creds: HTTPAuthorizationCredentials | None) -> dict:
+    """从 Bearer 凭据解析并校验 payload，失败抛 401。"""
+    if not creds or not creds.credentials:
+        raise HTTPException(status_code=401, detail="未提供认证令牌")
+    payload = decode_token(creds.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="认证令牌无效或已过期")
+    return payload
 
 
-def role_required(*roles):
-    """装饰器：要求特定角色。"""
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            token = get_token_from_request()
-            if not token:
-                return jsonify({"error": "未提供认证令牌"}), 401
-            payload = decode_token(token)
-            if not payload:
-                return jsonify({"error": "认证令牌无效或已过期"}), 401
-            if payload.get("role") not in roles:
-                return jsonify({"error": "权限不足"}), 403
-            g.current_user = payload
-            return f(*args, **kwargs)
-        return wrapper
-    return decorator
+def get_current_user(creds: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    """依赖：要求登录，返回 payload（含 user_id / username / role）。"""
+    return _extract_payload(creds)
 
 
-def current_user() -> dict | None:
-    """获取当前登录用户信息。"""
-    return getattr(g, "current_user", None)
+def require_roles(*roles):
+    """依赖工厂：要求登录且角色在白名单内，否则 403。"""
+    def _dep(creds: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+        payload = _extract_payload(creds)
+        if payload.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="权限不足")
+        return payload
+    return _dep
