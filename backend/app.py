@@ -1,62 +1,73 @@
 """
-医智助手 · 后端入口
+医智助手 · 后端入口（FastAPI / ASGI）
 
 启动后自动建库建表 + 播种演示数据。
 运行: python -m backend  （从项目根目录执行）→  http://127.0.0.1:8010
+生产: gunicorn -c gunicorn.conf.py wsgi:app（worker_class=uvicorn.workers.UvicornWorker）
 """
-from flask import Flask, send_from_directory
-from flask_cors import CORS
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend import config
-# 导入蓝图
-from backend.routes.auth_bp import auth_bp
-from backend.routes.chat_bp import chat_bp
-from backend.routes.dashboard_bp import dashboard_bp
-from backend.routes.kb_bp import kb_bp
-from backend.routes.medical_bp import medical_bp
-from backend.routes.review_bp import review_bp
+# 导入路由（APIRouter）
+from backend.routes.auth_bp import router as auth_router
+from backend.routes.chat_bp import router as chat_router
+from backend.routes.dashboard_bp import router as dashboard_router
+from backend.routes.kb_bp import router as kb_router
+from backend.routes.medical_bp import router as medical_router
+from backend.routes.review_bp import router as review_router
 from backend.utils.db import init_schema, DB_TYPE
 from backend.utils.errors import register_error_handlers
+from backend.utils.request_ctx import client_ip_var
 
 
-def create_app() -> Flask:
-    # 单容器演示部署：SERVE_FRONTEND=1 且前端构建产物存在时，Flask 直接托管 dist。
+def create_app() -> FastAPI:
+    # 单容器演示部署：SERVE_FRONTEND=1 且前端构建产物存在时，由 ASGI 应用直接托管 dist。
     # 前端为 hash 路由 + 相对路径 /api，同源服务无需 Nginx 反代与 history fallback。
     serve_dist = config.SERVE_FRONTEND and (config.FRONTEND_DIST / "index.html").is_file()
-    if serve_dist:
-        app = Flask(__name__, static_folder=str(config.FRONTEND_DIST), static_url_path="")
-    else:
-        app = Flask(__name__)
-    app.config["JSON_AS_ASCII"] = False
-    app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64MB
+
+    app = FastAPI(title="医智助手", docs_url=None, redoc_url=None)
 
     # CORS 全开
-    CORS(app, supports_credentials=True, origins="*")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-    # 注册蓝图
-    app.register_blueprint(auth_bp, url_prefix="/api/auth")
-    app.register_blueprint(chat_bp, url_prefix="/api/chat")
-    app.register_blueprint(kb_bp, url_prefix="/api/kb")
-    app.register_blueprint(medical_bp, url_prefix="/api/medical")
-    app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(review_bp, url_prefix="/api/review")
+    # 请求来源 IP 写入 contextvar，供审计服务在无请求上下文时读取（兼容反向代理）
+    @app.middleware("http")
+    async def _client_ip_middleware(request: Request, call_next):
+        fwd = request.headers.get("X-Forwarded-For", "")
+        ip = (fwd.split(",")[0].strip() if fwd
+              else (request.client.host if request.client else ""))
+        token = client_ip_var.set(ip or "")
+        try:
+            return await call_next(request)
+        finally:
+            client_ip_var.reset(token)
 
-    # 统一错误处理（APIError / 404 / 405 / 未捕获异常）
+    # 注册路由
+    app.include_router(auth_router, prefix="/api/auth")
+    app.include_router(chat_router, prefix="/api/chat")
+    app.include_router(kb_router, prefix="/api/kb")
+    app.include_router(medical_router, prefix="/api/medical")
+    app.include_router(dashboard_router, prefix="/api/dashboard")
+    app.include_router(review_router, prefix="/api/review")
+
+    # 统一错误处理（ApiError / 参数校验 / HTTPException / 未捕获异常）
     register_error_handlers(app)
 
     # 健康检查
-    @app.route("/api/health")
+    @app.get("/api/health")
     def health():
         return {"status": "ok", "db_type": DB_TYPE}
 
-    # 单容器模式：根路径返回前端入口页
-    if serve_dist:
-        @app.route("/")
-        def index():
-            return send_from_directory(config.FRONTEND_DIST, "index.html")
-
     # 向量库状态
-    @app.route("/api/vector/status")
+    @app.get("/api/vector/status")
     def vector_status():
         from backend.rag.vectorstore import get_vectorstore
         vs = get_vectorstore()
@@ -66,6 +77,11 @@ def create_app() -> Flask:
             "embed_model": config.OPENAI_EMBED_MODEL or "hash (builtin)",
             "chat_model": config.OPENAI_CHAT_MODEL,
         }
+
+    # 单容器模式：挂载前端静态站点（html=True 使 "/" 直接返回 index.html）。
+    # 必须在所有 /api 路由注册之后挂载，"/" 兜底才不会抢占 API 匹配。
+    if serve_dist:
+        app.mount("/", StaticFiles(directory=str(config.FRONTEND_DIST), html=True), name="static")
 
     return app
 
@@ -121,17 +137,14 @@ def init_database():
 
 def main():
     init_database()
-    app = create_app()
-    # 本地启动：保留交互调试器（debug=True 由 FLASK_DEBUG 控制），但默认关闭
-    # watchdog 自动重载（use_reloader=False）——Windows 下文件监视会把目录里任何动静
-    # （临时脚本增删、.venv 写入）当成代码变更，反复重启导致启动横幅与模型加载重复输出。
-    # 确需热重载：FLASK_USE_RELOADER=1。生产（Docker/gunicorn）不经过 app.run。
-    app.run(
+    import uvicorn
+    # 本地启动走 uvicorn；确需改代码热重载时设 FLASK_USE_RELOADER=1。
+    # 生产（Docker/gunicorn）不经过 main()，由 wsgi:app + UvicornWorker 承载。
+    uvicorn.run(
+        create_app(),
         host="0.0.0.0",
         port=config.BACKEND_PORT,
-        debug=config.FLASK_DEBUG,
-        use_reloader=config.FLASK_USE_RELOADER,
-        threaded=True,
+        reload=config.FLASK_USE_RELOADER,
     )
 
 

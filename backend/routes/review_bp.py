@@ -1,5 +1,5 @@
 """
-人工复核（HITL）路由。
+人工复核（HITL）路由（FastAPI APIRouter）。
 
 功能：
 - 医生 / 管理员查看并审批「待复核」的 AI 回答与知识库文档；
@@ -12,13 +12,15 @@
 """
 import json
 
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 
 from backend.services import audit_service
+from backend.utils.api_utils import json_body
 from backend.utils.db import fetchone, fetchall, execute, DB_TYPE, NOW_SQL
-from backend.utils.jwt_utils import current_user, role_required
+from backend.utils.jwt_utils import get_current_user, require_roles
 
-review_bp = Blueprint("review", __name__)
+router = APIRouter()
 
 REVIEWER_ROLES = ("doctor", "admin")
 
@@ -26,31 +28,29 @@ REVIEWER_ROLES = ("doctor", "admin")
 # （MySQL 用 NOW()，SQLite 用 datetime('now','localtime')）
 _NOW_SQL = NOW_SQL
 
+_review_dep = require_roles(*REVIEWER_ROLES)
+
 
 def _ph() -> str:
     return "%s" if DB_TYPE == "mysql" else "?"
 
 
-def _paginate() -> tuple[int, int, int]:
-    page = request.args.get("page", 1, type=int)
-    size = request.args.get("size", 20, type=int)
-    size = max(1, min(size, 100))
-    return page, size, (page - 1) * size
+def _norm_size(size: int) -> int:
+    return max(1, min(size, 100))
 
 
-def _note() -> str:
-    data = request.get_json(silent=True) or {}
+def _note_from(data: dict) -> str:
     return (data.get("note") or "").strip()[:500]
 
 
 # ---------------- AI 回答复核 ----------------
 
-@review_bp.route("/answers", methods=["GET"])
-@role_required(*REVIEWER_ROLES)
-def list_answers():
-    user = current_user()
-    status = request.args.get("status", "pending")
-    page, size, offset = _paginate()
+@router.get("/answers")
+def list_answers(user: dict = Depends(_review_dep),
+                 status: str = Query("pending"),
+                 page: int = Query(1), size: int = Query(20)):
+    size = _norm_size(size)
+    offset = (page - 1) * size
     ph = _ph()
     total = fetchone(
         f"SELECT COUNT(*) AS cnt FROM messages WHERE role='assistant' AND review_status={ph}",
@@ -68,22 +68,20 @@ def list_answers():
            ORDER BY m.id DESC LIMIT {ph} OFFSET {ph}""",
         (status, size, offset),
     )
-    return jsonify({"total": total, "list": rows, "page": page, "size": size})
+    return {"total": total, "list": rows, "page": page, "size": size}
 
 
-def _review_answer(msg_id: int, decision: str):
-    user = current_user()
+def _review_answer(msg_id: int, decision: str, user: dict, note: str):
     ph = _ph()
     msg = fetchone(
         f"SELECT * FROM messages WHERE id={ph} AND role='assistant'",
         (msg_id,),
     )
     if not msg:
-        return jsonify({"error": "回答不存在"}), 404
+        return JSONResponse({"error": "回答不存在"}, status_code=404)
     if msg["review_status"] != "pending":
-        return jsonify({"error": f"该回答已处于「{msg['review_status']}」状态，无法重复复核"}), 409
+        return JSONResponse({"error": f"该回答已处于「{msg['review_status']}」状态，无法重复复核"}, status_code=409)
 
-    note = _note()
     execute(
         f"UPDATE messages SET review_status={ph}, reviewer_id={ph}, reviewed_at={_NOW_SQL}, review_note={ph} "
         f"WHERE id={ph}",
@@ -97,29 +95,29 @@ def _review_answer(msg_id: int, decision: str):
         target_id=msg_id,
         detail=note or f"AI 回答（会话 {msg['conversation_id']}）已{('通过' if decision=='approved' else '驳回')}",
     )
-    return jsonify({"message": "ok", "review_status": decision})
+    return {"message": "ok", "review_status": decision}
 
 
-@review_bp.route("/answers/<int:msg_id>/approve", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def approve_answer(msg_id):
-    return _review_answer(msg_id, "approved")
+@router.post("/answers/{msg_id}/approve")
+def approve_answer(msg_id: int, user: dict = Depends(_review_dep),
+                   data: dict = Depends(json_body)):
+    return _review_answer(msg_id, "approved", user, _note_from(data))
 
 
-@review_bp.route("/answers/<int:msg_id>/reject", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def reject_answer(msg_id):
-    return _review_answer(msg_id, "rejected")
+@router.post("/answers/{msg_id}/reject")
+def reject_answer(msg_id: int, user: dict = Depends(_review_dep),
+                  data: dict = Depends(json_body)):
+    return _review_answer(msg_id, "rejected", user, _note_from(data))
 
 
 # ---------------- 知识库文档复核 ----------------
 
-@review_bp.route("/documents", methods=["GET"])
-@role_required(*REVIEWER_ROLES)
-def list_documents():
-    user = current_user()
-    status = request.args.get("status", "pending")
-    page, size, offset = _paginate()
+@router.get("/documents")
+def list_documents(user: dict = Depends(_review_dep),
+                   status: str = Query("pending"),
+                   page: int = Query(1), size: int = Query(20)):
+    size = _norm_size(size)
+    offset = (page - 1) * size
     ph = _ph()
     total = fetchone(
         f"SELECT COUNT(*) AS cnt FROM documents WHERE review_status={ph}",
@@ -135,19 +133,17 @@ def list_documents():
            ORDER BY d.id DESC LIMIT {ph} OFFSET {ph}""",
         (status, size, offset),
     )
-    return jsonify({"total": total, "list": rows, "page": page, "size": size})
+    return {"total": total, "list": rows, "page": page, "size": size}
 
 
-def _review_document(doc_id: int, decision: str):
-    user = current_user()
+def _review_document(doc_id: int, decision: str, user: dict, note: str):
     ph = _ph()
     doc = fetchone(f"SELECT * FROM documents WHERE id={ph}", (doc_id,))
     if not doc:
-        return jsonify({"error": "文档不存在"}), 404
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
     if doc["review_status"] != "pending":
-        return jsonify({"error": f"该文档已处于「{doc['review_status']}」状态，无法重复复核"}), 409
+        return JSONResponse({"error": f"该文档已处于「{doc['review_status']}」状态，无法重复复核"}, status_code=409)
 
-    note = _note()
     execute(
         f"UPDATE documents SET review_status={ph}, reviewer_id={ph}, reviewed_at={_NOW_SQL}, review_note={ph} "
         f"WHERE id={ph}",
@@ -161,29 +157,29 @@ def _review_document(doc_id: int, decision: str):
         target_id=doc_id,
         detail=note or f"文档《{doc['filename']}》已{('通过' if decision=='approved' else '驳回')}",
     )
-    return jsonify({"message": "ok", "review_status": decision})
+    return {"message": "ok", "review_status": decision}
 
 
-@review_bp.route("/documents/<int:doc_id>/approve", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def approve_document(doc_id):
-    return _review_document(doc_id, "approved")
+@router.post("/documents/{doc_id}/approve")
+def approve_document(doc_id: int, user: dict = Depends(_review_dep),
+                     data: dict = Depends(json_body)):
+    return _review_document(doc_id, "approved", user, _note_from(data))
 
 
-@review_bp.route("/documents/<int:doc_id>/reject", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def reject_document(doc_id):
-    return _review_document(doc_id, "rejected")
+@router.post("/documents/{doc_id}/reject")
+def reject_document(doc_id: int, user: dict = Depends(_review_dep),
+                    data: dict = Depends(json_body)):
+    return _review_document(doc_id, "rejected", user, _note_from(data))
 
 
 # ---------------- 预约请求复核（写操作 HITL） ----------------
 
-@review_bp.route("/appointments", methods=["GET"])
-@role_required(*REVIEWER_ROLES)
-def list_appointment_requests():
-    user = current_user()
-    status = request.args.get("status", "pending")
-    page, size, offset = _paginate()
+@router.get("/appointments")
+def list_appointment_requests(user: dict = Depends(_review_dep),
+                              status: str = Query("pending"),
+                              page: int = Query(1), size: int = Query(20)):
+    size = _norm_size(size)
+    offset = (page - 1) * size
     ph = _ph()
     total = fetchone(
         f"SELECT COUNT(*) AS cnt FROM appointment_requests WHERE review_status={ph}",
@@ -208,19 +204,17 @@ def list_appointment_requests():
         item = dict(r)
         item["request"] = req
         out.append(item)
-    return jsonify({"total": total, "list": out, "page": page, "size": size})
+    return {"total": total, "list": out, "page": page, "size": size}
 
 
-def _review_appointment_request(req_id: int, decision: str):
-    user = current_user()
+def _review_appointment_request(req_id: int, decision: str, user: dict, note: str):
     ph = _ph()
     req = fetchone(f"SELECT * FROM appointment_requests WHERE id={ph}", (req_id,))
     if not req:
-        return jsonify({"error": "预约请求不存在"}), 404
+        return JSONResponse({"error": "预约请求不存在"}, status_code=404)
     if req["review_status"] != "pending":
-        return jsonify({"error": f"该请求已处于「{req['review_status']}」状态，无法重复复核"}), 409
+        return JSONResponse({"error": f"该请求已处于「{req['review_status']}」状态，无法重复复核"}, status_code=409)
 
-    note = _note()
     new_appt_id = None
     if decision == "approved":
         try:
@@ -258,34 +252,31 @@ def _review_appointment_request(req_id: int, decision: str):
         target_id=req_id,
         detail=note or f"预约请求 #{req_id} 已{('通过并建单' if decision == 'approved' else '驳回')}",
     )
-    return jsonify({"message": "ok", "review_status": decision, "appointment_id": new_appt_id})
+    return {"message": "ok", "review_status": decision, "appointment_id": new_appt_id}
 
 
-@review_bp.route("/appointments/<int:req_id>/approve", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def approve_appointment_request(req_id):
-    return _review_appointment_request(req_id, "approved")
+@router.post("/appointments/{req_id}/approve")
+def approve_appointment_request(req_id: int, user: dict = Depends(_review_dep),
+                                data: dict = Depends(json_body)):
+    return _review_appointment_request(req_id, "approved", user, _note_from(data))
 
 
-@review_bp.route("/appointments/<int:req_id>/reject", methods=["POST"])
-@role_required(*REVIEWER_ROLES)
-def reject_appointment_request(req_id):
-    return _review_appointment_request(req_id, "rejected")
+@router.post("/appointments/{req_id}/reject")
+def reject_appointment_request(req_id: int, user: dict = Depends(_review_dep),
+                               data: dict = Depends(json_body)):
+    return _review_appointment_request(req_id, "rejected", user, _note_from(data))
 
 
 # ---------------- 审计日志查询（管理员） ----------------
 
-@review_bp.route("/audit", methods=["GET"])
-@role_required("admin")
-def audit_logs():
-    user = current_user()
-    action = request.args.get("action", "")
-    target_type = request.args.get("target_type", "")
-    page, size, offset = _paginate()
-    result = audit_service.list_audit(
+@router.get("/audit")
+def audit_logs(user: dict = Depends(require_roles("admin")),
+               action: str = Query(""), target_type: str = Query(""),
+               page: int = Query(1), size: int = Query(20)):
+    size = _norm_size(size)
+    return audit_service.list_audit(
         action=action or None,
         target_type=target_type or None,
         page=page,
         size=size,
     )
-    return jsonify(result)

@@ -1,5 +1,7 @@
-flask>=3.0.0
-flask-cors>=4.0.0
+fastapi>=0.115.0
+starlette>=0.41.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
 python-dotenv>=1.0.0
 PyMySQL>=1.1.0
 PyJWT>=2.8.0
@@ -18,6 +20,7 @@ PyPDF2>=3.0.0
 # 默认镜像不安装：rapidocr 会拉入 onnxruntime + opencv-python（约 200MB），
 # 且 opencv-python（非 headless）import cv2 需要 libxcb/libGL 等 GUI 系统库，
 # slim 镜像里会直接 ImportError。缺库时 file_parser 会给出明确提示，不影响其它格式。
+# werkzeug 仅用于 generate_password_hash（密码散列），不再依赖 Flask Web 框架
 werkzeug>=3.0.0
 gunicorn>=21.2.0
 # 注意：本项目的 MilvusStore 使用 PyMilvus 3.x 的 MilvusClient 高级 API

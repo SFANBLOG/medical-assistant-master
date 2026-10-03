@@ -10,16 +10,12 @@ from backend.utils.db import execute, fetchone, fetchall
 
 
 def _client_ip() -> str:
-    """尽力获取请求来源 IP（兼容反向代理 X-Forwarded-For）。无请求上下文时返回空串。"""
-    try:
-        from flask import request
+    """获取请求来源 IP：读取请求中间件写入的 contextvar（兼容 X-Forwarded-For）。
 
-        fwd = request.headers.get("X-Forwarded-For", "")
-        if fwd:
-            return fwd.split(",")[0].strip()
-        return request.remote_addr or ""
-    except Exception:  # noqa: BLE001 非请求上下文（如离线脚本）
-        return ""
+    非请求上下文（离线脚本 / 后台任务）时 contextvar 取默认空串，与原 Flask 行为一致。
+    """
+    from backend.utils.request_ctx import client_ip_var
+    return client_ip_var.get("")
 
 
 def write_audit(

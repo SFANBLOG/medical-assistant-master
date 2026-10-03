@@ -18,6 +18,9 @@ BGE 模型导致内存翻倍。
 import os
 
 bind = "0.0.0.0:8010"
+# 迁移到 FastAPI 后 wsgi:app 是 ASGI 应用，需用 UvicornWorker 承载
+# （同步 services/RAG 层仍由 FastAPI 线程池执行，不阻塞事件循环）。
+worker_class = "uvicorn.workers.UvicornWorker"
 workers = int(os.getenv("GUNICORN_WORKERS", "4"))
 threads = int(os.getenv("GUNICORN_THREADS", "2"))
 # SSE 流式回答预留充足时长：默认 120s 可能在 LLM 生成长回答时掐断流
