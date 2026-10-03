@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>医智助手 · Medical Assistant｜基于 RAG 的医疗知识库智能问答系统</title>
+<meta name="description" content="医智助手：基于 RAG（检索增强生成）的医疗知识库智能问答系统。12 个疾病知识库、483 篇医学文档、5 种角色门户，混合检索 + 安全护栏 + 人工复核 HITL，Docker 一键启动。">
+<style>
+:root{
+  --primary:#0d9488;--primary-dark:#0f766e;--primary-light:#14b8a6;
+  --ink:#0f172a;--ink-2:#334155;--ink-3:#64748b;
+  --bg:#f8fafc;--card:#ffffff;--line:#e2e8f0;
+  --accent:#2563eb;--danger:#dc2626;
+  --radius:14px;--shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.7}
+img{max-width:100%;display:block}
+a{color:var(--primary-dark);text-decoration:none}
+.container{max-width:1120px;margin:0 auto;padding:0 24px}
+/* ===== 顶部导航 ===== */
+.nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--ink)}
+.logo-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px}
+.nav-links{display:flex;gap:26px;font-size:14.5px;color:var(--ink-2)}
+.nav-links a:hover{color:var(--primary-dark)}
+.nav-cta{background:var(--ink);color:#fff!important;padding:8px 16px;border-radius:99px;font-size:13.5px}
+.nav-cta:hover{background:var(--primary-dark)!important}
+@media(max-width:860px){.nav-links{display:none}}
+/* ===== Hero ===== */
+.hero{position:relative;overflow:hidden;background:linear-gradient(180deg,#ecfdf5 0%,#f0fdfa 40%,var(--bg) 100%)}
+.hero::before{content:"";position:absolute;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle,rgba(20,184,166,.18),transparent 65%);top:-220px;right:-140px}
+.hero::after{content:"";position:absolute;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(37,99,235,.12),transparent 65%);bottom:-220px;left:-120px}
+.hero-inner{position:relative;z-index:1;padding:88px 0 72px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:6px 16px;font-size:13px;color:var(--ink-2);box-shadow:var(--shadow)}
+.hero-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--primary-light);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.hero h1{font-size:clamp(38px,6vw,60px);font-weight:900;letter-spacing:1px;margin:22px 0 6px}
+.hero h1 .grad{background:linear-gradient(90deg,var(--primary-dark),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .sub{font-size:clamp(16px,2.4vw,20px);color:var(--ink-2);max-width:760px;margin:14px auto 0}
+.hero .sub b{color:var(--primary-dark)}
+.hero-actions{margin-top:34px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 28px;border-radius:12px;font-size:15.5px;font-weight:600;transition:.2s}
+.btn-primary{background:var(--primary);color:#fff;box-shadow:0 6px 18px rgba(13,148,136,.35)}
+.btn-primary:hover{background:var(--primary-dark);transform:translateY(-2px)}
+.btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn-ghost:hover{border-color:var(--primary);color:var(--primary-dark);transform:translateY(-2px)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:860px;margin:56px auto 0;position:relative;z-index:1}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 12px;box-shadow:var(--shadow)}
+.stat .num{font-size:32px;font-weight:900;color:var(--primary-dark)}
+.stat .lbl{font-size:13.5px;color:var(--ink-3);margin-top:2px}
+@media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}
+.tech-badges{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:36px;position:relative;z-index:1}
+.tech-badges span{font-size:12.5px;color:var(--ink-2);background:#fff;border:1px solid var(--line);border-radius:99px;padding:5px 14px}
+/* ===== 通用 section ===== */
+section{padding:76px 0}
+.sec-head{text-align:center;margin-bottom:44px}
+.sec-head .kicker{font-size:13px;font-weight:700;letter-spacing:3px;color:var(--primary);text-transform:uppercase}
+.sec-head h2{font-size:clamp(26px,4vw,36px);font-weight:800;margin:8px 0 10px}
+.sec-head p{color:var(--ink-3);max-width:640px;margin:0 auto;font-size:15.5px}
+/* ===== 特性卡片 ===== */
+.grid{display:grid;gap:18px}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:960px){.grid-3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.grid-3,.grid-2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);transition:.25s}
+.card:hover{transform:translateY(-4px);border-color:var(--primary-light)}
+.card .icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px;background:linear-gradient(135deg,#ccfbf1,#dbeafe)}
+.card h3{font-size:17px;font-weight:700;margin-bottom:8px}
+.card p{font-size:14px;color:var(--ink-3)}
+.card p b{color:var(--primary-dark)}
+/* ===== 架构图 ===== */
+.figure{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.figure img{border-radius:8px;cursor:zoom-in}
+.figure figcaption{text-align:center;font-size:13.5px;color:var(--ink-3);padding:12px 0 4px}
+/* ===== RAG 流水线 ===== */
+.pipeline{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:960px){.pipeline{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.pipeline{grid-template-columns:1fr}}
+.step{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 14px 14px;box-shadow:var(--shadow)}
+.step .no{position:absolute;top:-12px;left:12px;width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(13,148,136,.4)}
+.step h4{font-size:14.5px;margin:4px 0 4px}
+.step p{font-size:12.5px;color:var(--ink-3);line-height:1.6}
+.step.guard{border-color:#fecaca;background:#fff9f9}
+.step.guard .no{background:var(--danger);box-shadow:0 3px 8px rgba(220,38,38,.35)}
+/* ===== 表格 ===== */
+.table-wrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+th{background:#f0fdfa;color:var(--ink);text-align:left;padding:13px 16px;font-weight:700;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px 16px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8fafc}
+.tag{display:inline-block;font-size:12px;font-weight:600;border-radius:6px;padding:2px 9px;white-space:nowrap}
+.tag-teal{background:#ccfbf1;color:#0f766e}
+.tag-blue{background:#dbeafe;color:#1d4ed8}
+.tag-amber{background:#fef3c7;color:#b45309}
+.tag-red{background:#fee2e2;color:#b91c1c}
+.tag-purple{background:#ede9fe;color:#6d28d9}
+code.inline{background:#f1f5f9;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:13px;font-family:ui-monospace,Consolas,monospace;color:var(--primary-dark)}
+/* ===== 代码块 ===== */
+.codeblock{background:var(--ink);border-radius:var(--radius);padding:22px 24px;overflow-x:auto;box-shadow:var(--shadow)}
+.codeblock pre{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:13.5px;line-height:1.8;color:#e2e8f0}
+.codeblock .cm{color:#64748b}
+.codeblock .cmd{color:#5eead4}
+/* ===== 流程图画廊 ===== */
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:960px){.gallery{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.gallery{grid-template-columns:1fr}}
+.g-item{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow);transition:.25s;cursor:zoom-in}
+#quickstart .grid>*{min-width:0}
+.codeblock pre{min-width:0}
+.g-item:hover{transform:translateY(-4px);border-color:var(--primary-light)}
+.g-item img{border-radius:8px;aspect-ratio:16/10;object-fit:cover;object-position:top}
+.g-item .cap{font-size:13.5px;font-weight:600;color:var(--ink-2);text-align:center;padding:10px 4px 4px}
+/* ===== Lightbox ===== */
+.lightbox{display:none;position:fixed;inset:0;z-index:200;background:rgba(2,6,23,.88);padding:32px;overflow:auto;cursor:zoom-out}
+.lightbox.open{display:flex;align-items:flex-start;justify-content:center}
+.lightbox img{max-width:min(1400px,96vw);max-height:92vh;object-fit:contain;border-radius:10px;background:#fff}
+/* ===== 评价 / FAQ ===== */
+.note{display:flex;gap:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px 18px;font-size:14px;color:#92400e;margin-top:22px}
+.note .ic{font-size:18px}
+/* ===== Footer ===== */
+footer{background:var(--ink);color:#94a3b8;padding:52px 0 36px;margin-top:40px}
+footer .foot-top{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:flex-start}
+footer .logo{color:#fff}
+footer p{font-size:13.5px;margin-top:12px;max-width:560px}
+footer .foot-links{display:flex;flex-direction:column;gap:10px;font-size:14px}
+footer .foot-links a{color:#cbd5e1}
+footer .foot-links a:hover{color:#5eead4}
+footer .copyright{border-top:1px solid #1e293b;margin-top:36px;padding-top:22px;font-size:12.5px;text-align:center;color:#64748b}
+.backtop{position:fixed;right:26px;bottom:26px;width:44px;height:44px;border-radius:12px;background:var(--primary);color:#fff;display:none;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 18px rgba(13,148,136,.4);cursor:pointer;z-index:90}
+.backtop.show{display:flex}
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="logo"><span class="logo-mark">医</span>医智助手 <span style="font-weight:400;color:var(--ink-3);font-size:14px">· Medical Assistant</span></div>
+    <div class="nav-links">
+      <a href="#features">核心能力</a>
+      <a href="#architecture">系统架构</a>
+      <a href="#pipeline">RAG 链路</a>
+      <a href="#flowcharts">流程图集</a>
+      <a href="#quickstart">快速开始</a>
+      <a href="#demo">演示账号</a>
+    </div>
+    <a class="nav-cta" href="https://github.com/SFANBLOG/medical-assistant-master" target="_blank" rel="noopener">★ GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<header class="hero" id="top">
+  <div class="container hero-inner">
+    <span class="hero-badge"><span class="dot"></span>开源项目 · 木兰宽松许可证 MulanPSL-2.0</span>
+    <h1>医智助手 <span class="grad">Medical Assistant</span></h1>
+    <p class="sub">基于 <b>RAG（检索增强生成）</b>的医疗知识库智能问答系统，面向医院信息系统教学与演示场景。<br>
+    Docker 一键启动 —— <b>无外部大模型 Key、无 Milvus 也能完整运行</b>。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/SFANBLOG/medical-assistant-master" target="_blank" rel="noopener">📦 查看源码仓库</a>
+      <a class="btn btn-ghost" href="#quickstart">🚀 快速开始</a>
+      <a class="btn btn-ghost" href="#architecture">🏗 系统架构</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num">12</div><div class="lbl">疾病知识库</div></div>
+      <div class="stat"><div class="num">483</div><div class="lbl">篇医学文档</div></div>
+      <div class="stat"><div class="num">5</div><div class="lbl">种角色门户</div></div>
+      <div class="stat"><div class="num">100%</div><div class="lbl">生产等价评测 Hit@1</div></div>
+    </div>
+    <div class="tech-badges">
+      <span>Python 3.11</span><span>Flask 3</span><span>Vue 3.4 + TS</span><span>Vite 5</span><span>Pinia</span><span>Element Plus</span><span>ECharts</span><span>MySQL 8 / SQLite</span><span>Milvus 2.5</span><span>BGE Embedding</span><span>OpenAI 兼容 LLM</span><span>Docker Compose</span>
+    </div>
+  </div>
+</header>
+
+<!-- 核心能力 -->
+<section id="features">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">Features</div>
+      <h2>七大核心能力</h2>
+      <p>从混合检索到医疗安全兜底，每一层都为"真实可上线的医疗问答"而设计</p>
+    </div>
+    <div class="grid grid-3">
+      <div class="card"><div class="icon">🔍</div><h3>混合检索 RAG</h3><p>BM25 稀疏检索 + BGE 稠密向量 + <b>融合重排 v4</b>（实体地板 / 证据分 / 泛化词剔除），答案可溯源到具体文档片段，生产等价评测 <b>Hit@1 = 100%</b>。</p></div>
+      <div class="card"><div class="icon">🛡️</div><h3>安全护栏</h3><p>急危重症关键词命中即直接返回<b>急救指引</b>（跳过检索与 LLM）；最终回答强制附带免责声明，医疗场景安全兜底。</p></div>
+      <div class="card"><div class="icon">🧠</div><h3>用户画像注入</h3><p>回答前自动检索当前用户<b>近期病史 / 预约</b>并注入系统提示，实现个性化回答（如过敏史提醒）。</p></div>
+      <div class="card"><div class="icon">👨‍️</div><h3>人工复核 HITL</h3><p>AI 回答、知识库文档与预约写操作均需 <code class="inline">pending → approved</code> 才生效，未复核内容不进入 RAG 上下文。</p></div>
+      <div class="card"><div class="icon">📋</div><h3>全链路审计</h3><p>复核动作与关键写操作落 <code class="inline">audit_logs</code>，管理员可分页追溯（操作人 / 角色 / 来源 IP）。</p></div>
+      <div class="card"><div class="icon">⚙️</div><h3>多级降级容错</h3><p>无 LLM Key、无 Milvus、无 BGE 模型、无 GPU 均自动降级到<b>离线规则链路</b>——"任何时候都能跑起来"。</p></div>
+      <div class="card"><div class="icon">🗄️</div><h3>双数据库</h3><p>MySQL 8（生产默认）与 SQLite（零依赖演示）通过 <code class="inline">DB_TYPE</code> 一键切换。</p></div>
+      <div class="card" style="background:linear-gradient(135deg,#f0fdfa,#eff6ff);display:flex;flex-direction:column;justify-content:center"><h3 style="color:var(--primary-dark)">📚 12 个疾病知识库</h3><p>呼吸系统 · 心血管 · 消化系统 · 神经系统 · 内分泌代谢 · 泌尿肾脏 · 风湿免疫 · 感染性疾病 · 急诊急症 · 外科骨科 · 皮肤科 · 妇儿疾病，公开 / 私有两类文档按角色隔离。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 系统架构 -->
+<section id="architecture" style="background:#f0fdfa66;border-block:1px solid var(--line)">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">Architecture</div>
+      <h2>系统总体架构</h2>
+      <p>前端 Vue 3 单页应用 · Flask API 网关层 · RAG 12 步问答流水线 · 双存储 · 全链路 HITL 复核（点击大图查看）</p>
+    </div>
+    <figure class="figure">
+      <img src="assets/img/arch-overall.png" alt="医智助手系统总体架构图" loading="lazy" onclick="openLightbox(this.src)">
+      <figcaption>医智助手 · 基于 RAG 的医疗知识库智能问答系统 —— 系统总体架构（点击图片放大）</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- RAG 流水线 -->
+<section id="pipeline">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">RAG Pipeline</div>
+      <h2>一次问答的完整链路（12 步）</h2>
+      <p>由 chat_service 驱动的主干流水线，红色节点为医疗安全护栏</p>
+    </div>
+    <div class="pipeline">
+      <div class="step"><span class="no">1</span><h4>提问入口</h4><p>POST /api/chat/stream，SSE 流式通道建立</p></div>
+      <div class="step guard"><span class="no">2</span><h4>输入护栏</h4><p>急危重症关键词命中 → 直接返回急救指引，跳过检索与 LLM</p></div>
+      <div class="step"><span class="no">3</span><h4>画像注入</h4><p>检索用户近期病史 / 预约 / 上次咨询摘要</p></div>
+      <div class="step"><span class="no">4</span><h4>权限裁剪</h4><p>按角色（患者/群众/护士/医生/管理员）算出可见知识库范围</p></div>
+      <div class="step"><span class="no">5</span><h4>双路召回</h4><p>BM25 Top-30（jieba 分词）∪ BGE 稠密向量 Top-30</p></div>
+      <div class="step"><span class="no">6</span><h4>融合重排 v4</h4><p>实体地板 0.90 + 证据分，泛化词剔除，&lt;0.45 丢弃，取 Top-8</p></div>
+      <div class="step"><span class="no">7</span><h4>HITL 过滤</h4><p>仅保留 review_status='approved' 且 status='ready' 的文档</p></div>
+      <div class="step"><span class="no">8</span><h4>上下文构建</h4><p>build_context() 拼装带来源标注的片段 + 注入用户画像</p></div>
+      <div class="step"><span class="no">9</span><h4>LLM 流式生成</h4><p>SSE 逐段推送；无 Key 时自动降级离线兜底生成</p></div>
+      <div class="step guard"><span class="no">10</span><h4>输出护栏</h4><p>ensure_disclaimer() 兜底——缺免责内容自动补发增量帧</p></div>
+      <div class="step"><span class="no">11</span><h4>持久化</h4><p>messages + citations 落库，引用可溯源到文档片段</p></div>
+      <div class="step"><span class="no">12</span><h4>复核 + 审计</h4><p>患者/群众回答进入复核队列，动作全量落 audit_logs</p></div>
+    </div>
+    <figure class="figure" style="margin-top:26px">
+      <img src="assets/img/flow-03-rag-chat.png" alt="RAG 智能问答业务流程图" loading="lazy" onclick="openLightbox(this.src)">
+      <figcaption>RAG 智能问答业务流程图（点击图片放大）</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- 角色与权限 -->
+<section id="roles" style="background:#f0fdfa66;border-block:1px solid var(--line)">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">RBAC</div>
+      <h2>五种角色 · 双重权限把关</h2>
+      <p>前端路由按 <code class="inline">meta.roles</code> 做页面级守卫，后端每个接口再做一次角色校验</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>角色</th><th>知识库可见范围</th><th>业务功能</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag tag-teal">patient 患者</span></td><td>仅公开库</td><td>健康档案、住院查询、消费明细、预约挂号</td></tr>
+          <tr><td><span class="tag tag-blue">public 群众</span></td><td>仅公开库</td><td>健康资讯、预约挂号（不关联个人健康数据）</td></tr>
+          <tr><td><span class="tag tag-purple">nurse 护士</span></td><td>仅公开库</td><td>护理工作台：患者信息、护理记录录入、排班查看</td></tr>
+          <tr><td><span class="tag tag-amber">doctor 医生</span></td><td>公开库 + 自己名下及平台公共的私有库</td><td>患者管理、住院信息维护、知识库与文档管理、复核 AI 回答与预约请求</td></tr>
+          <tr><td><span class="tag tag-red">admin 管理员</span></td><td>全部公开库与私有库</td><td>用户管理、全系统数据看板、复核、审计日志查询</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><span class="ic">⚕️</span><span><b>医疗场景关键设计：</b>AI 生成的内容默认不直接对患者可见 —— 患者/群众的 AI 回答、新上传文档、AI 发起的预约请求初始均为 <b>pending</b>，经医生 / 管理员复核通过（approved）后才生效并进入 RAG 上下文；驳回（rejected）则丢弃留痕。</span></div>
+  </div>
+</section>
+
+<!-- 流程图集 -->
+<section id="flowcharts">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">Diagrams</div>
+      <h2>业务流程图集</h2>
+      <p>9 张端到端流程图，覆盖登录鉴权、问答、知识入库、检索重排、复核审计与部署全生命周期（点击放大）</p>
+    </div>
+    <div class="gallery">
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-01-business.png" alt="系统总体业务流程图" loading="lazy"><div class="cap">① 系统总体业务流程</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-02-auth.png" alt="登录与角色权限流程图" loading="lazy"><div class="cap">② 登录与角色权限</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-03-rag-chat.png" alt="RAG 智能问答业务流程图" loading="lazy"><div class="cap">③ RAG 智能问答业务</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-04-upload.png" alt="文档上传入库流程图" loading="lazy"><div class="cap">④ 文档上传入库</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-05-hybrid-rerank.png" alt="混合召回与检索重排流程图" loading="lazy"><div class="cap">⑤ 混合召回与检索重排</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-06-sse.png" alt="前端问答 SSE 交互时序图" loading="lazy"><div class="cap">⑥ 前端问答 SSE 时序</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-07-deploy.png" alt="部署与启动流程图" loading="lazy"><div class="cap">⑦ 部署与启动</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-08-lifecycle.png" alt="项目生命周期总览图" loading="lazy"><div class="cap">⑧ 项目生命周期总览</div></div>
+      <div class="g-item" onclick="openLightbox(this.querySelector('img').src)"><img src="assets/img/flow-09-hitl-audit.png" alt="人工复核与审计流程图" loading="lazy"><div class="cap">⑨ 人工复核与审计</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 快速开始 -->
+<section id="quickstart" style="background:#f0fdfa66;border-block:1px solid var(--line)">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">Quick Start</div>
+      <h2>Docker 一键启动</h2>
+      <p>7 服务编排：MySQL · etcd · MinIO · Milvus · Attu · Flask 后端 · Nginx 前端</p>
+    </div>
+    <div class="grid grid-2">
+      <div>
+        <div class="codeblock"><pre><span class="cm"># 1. 准备环境变量（按需修改 OPENAI_API_KEY 等）</span>
+<span class="cmd">cp .env.example .env</span>
+
+<span class="cm"># 2. 构建并后台启动（首次构建约数分钟至十余分钟）</span>
+<span class="cmd">docker compose up -d --build</span>
+
+<span class="cm"># 3. 查看状态与日志</span>
+<span class="cmd">docker compose ps</span>
+<span class="cmd">docker compose logs -f backend</span></pre></div>
+        <div class="table-wrap" style="margin-top:18px">
+          <table style="min-width:480px">
+            <thead><tr><th>入口</th><th>地址</th></tr></thead>
+            <tbody>
+              <tr><td>前端应用</td><td><code class="inline">http://localhost:3000</code></td></tr>
+              <tr><td>后端健康检查</td><td><code class="inline">http://localhost:8010/api/health</code></td></tr>
+              <tr><td>Milvus 管理台（Attu）</td><td><code class="inline">http://localhost:8000</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="height:auto">
+          <h3>💻 本地零依赖运行</h3>
+          <p style="margin-bottom:10px">没有 MySQL / Milvus？设 <code class="inline">DB_TYPE=sqlite</code>、<code class="inline">MILVUS_ENABLE=0</code>，内置 NumpyStore + 哈希向量 + 离线规则回答，零外部依赖即可跑通全链路：</p>
+          <div class="codeblock" style="margin-top:10px"><pre><span class="cm"># 后端（Python 3.11+）</span>
+<span class="cmd">pip install -r backend/requirements.txt</span>
+<span class="cmd">python -m backend</span>   <span class="cm"># → http://127.0.0.1:8010</span>
+
+<span class="cm"># 前端（Node.js 18+）</span>
+<span class="cmd">cd frontend && npm install && npm run dev</span>  <span class="cm"># → :5173</span></pre></div>
+        </div>
+        <div class="card" style="height:auto;margin-top:18px">
+          <h3>🧪 评测一键复现</h3>
+          <p>自包含脚本（真实 embedder + BM25 + rerank，无需 MySQL / Milvus / LLM），内置 20 条人工标注医学查询：</p>
+          <div class="codeblock" style="margin-top:10px"><pre><span class="cmd">python scripts/eval_rerank_local.py --public-only</span></pre></div>
+          <div class="table-wrap" style="margin-top:14px"><table style="min-width:0;font-size:13px">
+            <thead><tr><th>模式</th><th>Hit@1</th><th>MRR</th><th>GT 平均分</th></tr></thead>
+            <tbody>
+              <tr><td>全库（483 篇，严格）</td><td><b>95%</b></td><td>0.975</td><td>0.987</td></tr>
+              <tr><td>仅公开（生产等价）</td><td><b style="color:var(--primary-dark)">100%</b></td><td><b>1.000</b></td><td>0.988</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 演示账号 -->
+<section id="demo">
+  <div class="container">
+    <div class="sec-head">
+      <div class="kicker">Demo Accounts</div>
+      <h2>五类角色演示账号</h2>
+      <p>密码统一为 <code class="inline">demo123</code>，播种即得，覆盖全部业务功能</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>账号</th><th>角色</th><th>可体验的功能</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">patientdemo</code></td><td><span class="tag tag-teal">患者</span></td><td>公开库问答、健康档案、住院与消费查询、预约挂号</td></tr>
+          <tr><td><code class="inline">doctordemo</code></td><td><span class="tag tag-amber">医生</span></td><td>知识库与文档管理、患者管理、住院维护、AI 回答 / 预约复核</td></tr>
+          <tr><td><code class="inline">nursedemo</code></td><td><span class="tag tag-purple">护士</span></td><td>护理工作台、护理记录、排班查看</td></tr>
+          <tr><td><code class="inline">publicdemo</code></td><td><span class="tag tag-blue">群众</span></td><td>健康资讯、公开库问答、预约挂号</td></tr>
+          <tr><td><code class="inline">admindemo</code></td><td><span class="tag tag-red">管理员</span></td><td>全部功能 + 用户管理 + 全系统看板 + 审计日志</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><span class="ic">💡</span><span>播种还会生成 doctor01~16、nurse01~08、patient01~30、public01~05 等账号（密码相同），用于演示多用户数据场景。</span></div>
+  </div>
+</section>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="放大预览" onclick="event.stopPropagation()"></div>
+
+<footer>
+  <div class="container">
+    <div class="foot-top">
+      <div>
+        <div class="logo"><span class="logo-mark">医</span>医智助手 · Medical Assistant</div>
+        <p>基于 RAG 的医疗知识库智能问答系统。本系统的回答仅用于医疗健康信息的辅助理解与教学演示，不构成诊断、处方或治疗建议。实际医疗问题请咨询专业医生并以执业医师的诊断为准。</p>
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/SFANBLOG/medical-assistant-master" target="_blank" rel="noopener">GitHub 仓库 ↗</a>
+        <a href="https://github.com/SFANBLOG/medical-assistant-master/blob/main/README.md" target="_blank" rel="noopener">完整 README ↗</a>
+        <a href="https://github.com/SFANBLOG/medical-assistant-master/blob/main/LICENSE" target="_blank" rel="noopener">木兰宽松许可证 2.0 ↗</a>
+        <a href="#top">回到顶部 ↑</a>
+      </div>
+    </div>
+    <div class="copyright">© 2026 医智助手 · Medical Assistant ｜ MulanPSL-2.0 开源发布 ｜ 本页面由 GitHub Pages 托管</div>
+  </div>
+</footer>
+
+<div class="backtop" id="backtop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</div>
+
+<script>
+function openLightbox(src){
+  document.getElementById('lightbox-img').src=src;
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLightbox()});
+window.addEventListener('scroll',()=>{
+  document.getElementById('backtop').classList.toggle('show',window.scrollY>600);
+});
+</script>
+</body>
+</html>
