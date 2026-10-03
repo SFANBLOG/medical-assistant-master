@@ -354,6 +354,50 @@ def seed_hospitalizations():
     print(f"[Seed] 住院信息创建完成: {count} 条")
 
 
+def seed_health_metrics():
+    """为糖尿病患者（及演示患者）创建近期血糖读数（health_metrics）。
+
+    供个性化问答注入「近期血糖」使用：糖尿病演示患者问「能不能吃粥」时，
+    系统提示会带上其空腹/餐后血糖，使回答能结合个体数据。
+    需在 seed_hospitalizations 之后执行（依赖诊断定位糖尿病患者）。
+    """
+    print("[Seed] 创建血糖指标...")
+    ph = _placeholder()
+    now = datetime.now()
+
+    # 诊断为糖尿病的患者
+    dm_patients = [
+        r["patient_id"]
+        for r in fetchall(
+            "SELECT DISTINCT patient_id FROM hospitalizations WHERE diagnosis LIKE %s",
+            ("%糖尿病%",),
+        )
+    ]
+    # 演示患者账号也纳入，保证 patientdemo 可体验
+    demo = fetchone("SELECT id FROM users WHERE username = %s", ("patientdemo",))
+    if demo and demo["id"] not in dm_patients:
+        dm_patients.append(demo["id"])
+
+    inserted = 0
+    for pid in dm_patients:
+        samples = [
+            ("空腹", round(random.uniform(6.5, 9.5), 1)),
+            ("餐后2h", round(random.uniform(9.0, 14.0), 1)),
+            ("随机", round(random.uniform(7.0, 12.0), 1)),
+        ]
+        for i, (ctx, val) in enumerate(samples):
+            rec = (now - timedelta(days=i)).strftime("%Y-%m-%d %H:%M:%S")
+            execute(
+                f"INSERT INTO health_metrics (patient_id, metric, value, unit, context, recorded_at) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+                (pid, "blood_glucose", val, "mmol/L", ctx, rec),
+            )
+            inserted += 1
+
+    count = fetchone("SELECT COUNT(*) AS cnt FROM health_metrics")["cnt"]
+    print(f"[Seed] 血糖指标创建完成: 新增 {inserted} 条，共 {count} 条")
+
+
 def seed_bills():
     """创建消费明细。"""
     print("[Seed] 创建消费明细...")
@@ -531,6 +575,7 @@ def seed_all():
         ("seed_documents_and_vectors", seed_documents_and_vectors),
         ("seed_conversations", seed_conversations),
         ("seed_hospitalizations", seed_hospitalizations),
+        ("seed_health_metrics", seed_health_metrics),
         ("seed_bills", seed_bills),
         ("seed_appointments", seed_appointments),
         ("seed_nursing_records", seed_nursing_records),

@@ -188,6 +188,8 @@ def init_schema():
 
         # 对已有数据库做增量迁移（HITL 复核字段）
         _run_hitl_migrations()
+        # 增量迁移：体征/检验指标表（个性化问答注入近期血糖等）
+        _ensure_health_metrics()
     except Exception as e:
         conn.rollback()
         print(f"[DB] Schema 初始化失败: {e}")
@@ -300,3 +302,38 @@ def _run_hitl_migrations():
         print("[DB] appointment_requests 迁移完成")
     except Exception as e:  # noqa: BLE001
         print(f"[DB] appointment_requests 迁移跳过：{e}")
+
+
+def _ensure_health_metrics():
+    """幂等创建 health_metrics 表（体征/检验指标，如近期血糖）。
+
+    旧库可能没有此表；CREATE TABLE IF NOT EXISTS 对两种引擎均安全，
+    使个性化画像注入（近期血糖）在已有演示库上无需重新播种即可生效。
+    """
+    ddl = (
+        "CREATE TABLE IF NOT EXISTS health_metrics ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "patient_id INTEGER NOT NULL, "
+        "metric VARCHAR(32) NOT NULL, "
+        "value REAL NOT NULL, "
+        "unit VARCHAR(16) NOT NULL, "
+        "context VARCHAR(32) NULL, "
+        "recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    ) if DB_TYPE == "sqlite" else (
+        "CREATE TABLE IF NOT EXISTS health_metrics ("
+        "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, "
+        "patient_id INT UNSIGNED NOT NULL, "
+        "metric VARCHAR(32) NOT NULL, "
+        "value DOUBLE NOT NULL, "
+        "unit VARCHAR(16) NOT NULL, "
+        "context VARCHAR(32) NULL, "
+        "recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+        "PRIMARY KEY (id), KEY idx_hm_patient_metric (patient_id, metric)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    )
+    try:
+        execute(ddl)
+        if DB_TYPE == "sqlite":
+            execute("CREATE INDEX IF NOT EXISTS idx_hm_patient_metric ON health_metrics(patient_id, metric)")
+    except Exception as e:  # noqa: BLE001
+        print(f"[DB] health_metrics 迁移跳过：{e}")

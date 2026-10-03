@@ -8,6 +8,7 @@ from typing import Generator
 from backend.rag import guardrails, memory
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend.rag.retriever import retrieve, build_context
+from backend.services import audit_service
 from backend.utils.db import fetchone, fetchall, execute, NOW_SQL
 
 
@@ -151,10 +152,23 @@ def chat_stream_sse(
         _save_assistant_message(conv_id, _clean_answer_text(emergency), [])
         return
 
-    # 3. 检索 + 构建上下文 + 用户画像
+    # 3. 检索 + 构建上下文 + 用户画像（按角色权限门控，日志不保留原文）
     hits = retrieve(question, role, user_id, kb_id=kb_id)
     context = build_context(hits)
-    user_context = memory.get_enhanced_user_context({"user_id": user_id})
+    user_context, profile_meta = memory.build_user_profile({"user_id": user_id, "role": role})
+    # 审计留痕：仅记录本次注入了哪些字段类别与条数，绝不写入画像原文（病史/血糖等）
+    if profile_meta.get("fields"):
+        audit_service.write_audit(
+            actor_id=user_id,
+            actor_role=role,
+            action="profile_injection",
+            target_type="user",
+            target_id=user_id,
+            detail=(
+                f"role={role};fields={','.join(profile_meta['fields'])};"
+                f"counts={profile_meta.get('counts', {})};chars={profile_meta.get('chars', 0)}"
+            ),
+        )
 
     # 获取历史对话
     history_rows = fetchall(

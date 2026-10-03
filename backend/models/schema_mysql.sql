@@ -260,6 +260,22 @@ CREATE TABLE IF NOT EXISTS `nursing_records`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='护理记录表';
 
+-- 体征 / 检验指标表（结构化，供个性化问答注入「近期血糖」等临床读数）
+CREATE TABLE IF NOT EXISTS `health_metrics`
+(
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `patient_id`  INT UNSIGNED NOT NULL,
+    `metric`      VARCHAR(32)  NOT NULL COMMENT '指标类型，如 blood_glucose',
+    `value`       DOUBLE       NOT NULL,
+    `unit`        VARCHAR(16)  NOT NULL COMMENT '单位，如 mmol/L',
+    `context`     VARCHAR(32)  NULL COMMENT '采集场景，如 空腹/餐后2h',
+    `recorded_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_hm_patient_metric` (`patient_id`, `metric`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='体征/检验指标表';
+
 -- 医护排班表
 CREATE TABLE IF NOT EXISTS `schedules`
 (

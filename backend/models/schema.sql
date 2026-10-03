@@ -193,6 +193,19 @@ CREATE TABLE IF NOT EXISTS nursing_records (
 );
 CREATE INDEX IF NOT EXISTS idx_nursing_patient ON nursing_records(patient_id);
 
+-- 体征 / 检验指标表（结构化，供个性化问答注入「近期血糖」等临床读数）
+-- metric 例：blood_glucose（血糖）；value+unit 组合表达如 8.6 mmol/L。
+CREATE TABLE IF NOT EXISTS health_metrics (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id  INTEGER      NOT NULL,
+    metric      VARCHAR(32)  NOT NULL,
+    value       REAL         NOT NULL,
+    unit        VARCHAR(16)  NOT NULL,
+    context     VARCHAR(32)  NULL,
+    recorded_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hm_patient_metric ON health_metrics(patient_id, metric);
+
 CREATE TABLE IF NOT EXISTS schedules (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id   INTEGER      NOT NULL,
