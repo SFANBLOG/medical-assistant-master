@@ -4,7 +4,7 @@
 启动后自动建库建表 + 播种演示数据。
 运行: python -m backend  （从项目根目录执行）→  http://127.0.0.1:8010
 """
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 
 from backend import config
@@ -20,7 +20,13 @@ from backend.utils.errors import register_error_handlers
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    # 单容器演示部署：SERVE_FRONTEND=1 且前端构建产物存在时，Flask 直接托管 dist。
+    # 前端为 hash 路由 + 相对路径 /api，同源服务无需 Nginx 反代与 history fallback。
+    serve_dist = config.SERVE_FRONTEND and (config.FRONTEND_DIST / "index.html").is_file()
+    if serve_dist:
+        app = Flask(__name__, static_folder=str(config.FRONTEND_DIST), static_url_path="")
+    else:
+        app = Flask(__name__)
     app.config["JSON_AS_ASCII"] = False
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64MB
 
@@ -42,6 +48,12 @@ def create_app() -> Flask:
     @app.route("/api/health")
     def health():
         return {"status": "ok", "db_type": DB_TYPE}
+
+    # 单容器模式：根路径返回前端入口页
+    if serve_dist:
+        @app.route("/")
+        def index():
+            return send_from_directory(config.FRONTEND_DIST, "index.html")
 
     # 向量库状态
     @app.route("/api/vector/status")

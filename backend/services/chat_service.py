@@ -8,7 +8,7 @@ from typing import Generator
 from backend.rag import guardrails, memory
 from backend.rag.llm import chat_stream, _clean_answer_text
 from backend.rag.retriever import retrieve, build_context
-from backend.utils.db import fetchone, fetchall, execute
+from backend.utils.db import fetchone, fetchall, execute, NOW_SQL
 
 
 def create_conversation(user_id: int, kb_id: int = None, title: str = "新对话") -> dict:
@@ -137,7 +137,7 @@ def chat_stream_sse(
     # 便于在会话列表中区分不同对话（同时兼容历史遗留的默认标题）。
     new_title = question.strip()[:60] or "新对话"
     execute(
-        "UPDATE conversations SET title = %s, updated_at = NOW() "
+        f"UPDATE conversations SET title = %s, updated_at = {NOW_SQL} "
         "WHERE id = %s AND (title IS NULL OR title = '' OR title = '新对话')",
         (new_title, conv_id),
     )

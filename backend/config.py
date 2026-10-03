@@ -225,6 +225,13 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 MODEL_DIR = DATA_DIR / "ai_models"
 SQLITE_PATH = DATA_DIR / f"{DATABASE_NAME}.db"
 
+# ---- 单容器演示部署：Flask 直接托管前端构建产物 ----
+# SERVE_FRONTEND=1 且 frontend/dist/index.html 存在时，create_app 挂载静态站点，
+# 同源下前端 axios/SSE 的相对路径 /api 直接可用，无需 Nginx 反代。
+# 前端为 hash 路由，仅 "/" 返回 index.html 即可，无 history fallback 需求。
+SERVE_FRONTEND = os.getenv("SERVE_FRONTEND", "false").lower() in ("1", "true", "yes", "on")
+FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
+
 # 确保目录存在
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
