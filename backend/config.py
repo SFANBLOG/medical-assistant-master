@@ -169,15 +169,22 @@ RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.45"))
 RERANK_W_DENSE = float(os.getenv("RERANK_W_DENSE", "0.55"))
 RERANK_W_BM25 = float(os.getenv("RERANK_W_BM25", "0.30"))
 RERANK_W_LEXICAL = float(os.getenv("RERANK_W_LEXICAL", "0.15"))
-# 混合检索融合方式（三选一）：
+# 混合检索融合方式（强制经过重排器，二选一）：
 #   weighted    ：双分支合并去重 → 直接交给加权重排器（实体地板校准 + 位置/长度惩罚）。
-#   rrf         ：双分支各按名次做 Reciprocal Rank Fusion（Σ 1/(RRF_K+rank)）取 Top-K，
-#                 纯排名融合、丢弃分数幅值，不经过加权重排器。
 #   rrf_rerank  ：先 RRF 名次融合裁剪候选池（对两路分数尺度不敏感、鲁棒），再把池交给
 #                 加权重排器做精排/实体地板/阈值过滤 —— BGE + BM25 + RRF 三者串联。
 # 默认 rrf_rerank：RRF 稳健融合两路召回并裁剪候选池，重排器负责精排，
 # 既用上 RRF 的尺度无关融合优势，又保留已调优的实体地板与相关度指标。
+# 医疗问答场景要求精排为必经链路：历史选项 "rrf"（纯排名融合、跳过重排器）已禁用，
+# 显式配置为 "rrf" 或非法值时自动回退到 rrf_rerank，保证任何部署形态下精排都生效。
 HYBRID_FUSION = os.getenv("HYBRID_FUSION", "rrf_rerank").lower()
+_RERANK_FORCED_MODES = ("weighted", "rrf_rerank")
+if HYBRID_FUSION not in _RERANK_FORCED_MODES:
+    print(
+        f"[config] HYBRID_FUSION={HYBRID_FUSION!r} 不在白名单 {_RERANK_FORCED_MODES} 内，"
+        "已强制回退为 'rrf_rerank'（精排为医疗链路必选项，不允许绕过重排器）"
+    )
+    HYBRID_FUSION = "rrf_rerank"
 # RRF 平滑常数（标准取值 60），名次越靠后贡献越小。
 RRF_K = int(os.getenv("RRF_K", "60"))
 # rrf_rerank 模式下，RRF 融合后送入重排器的候选池大小（应 >= RERANK_TOP_K）。

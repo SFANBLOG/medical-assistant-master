@@ -186,47 +186,6 @@ def _ensure_bm25() -> Optional[BM25Index]:
         return None
 
 
-def _hit_base(h: dict) -> dict:
-    """从单通道命中提取候选所需的基础字段（dense / bm25 命中结构兼容）。"""
-    return {
-        "id": h.get("id"),
-        "kb_id": h.get("kb_id"),
-        "doc_id": h.get("doc_id"),
-        "chunk_index": h.get("chunk_index"),
-        "text": h.get("text", ""),
-    }
-
-
-def _rrf_fuse(
-    dense_hits: list[dict],
-    bm25_hits: list[dict],
-    top_k: int,
-    k: Optional[int] = None,
-) -> list[dict]:
-    """Reciprocal Rank Fusion：对稠密与 BM25 两条名次列表按 1/(k+rank) 累加融合。
-
-    纯排名融合、不依赖各通道分数可比性；输出与加权重排器同构（含 score 字段，
-    归一化到 0~1 便于下游展示/引用），供阶段4 元数据补全直接消费。
-    """
-    kk = config.RRF_K if k is None else k
-    fused: dict[tuple, dict] = {}
-    for rank, h in enumerate(dense_hits):
-        key = (h.get("doc_id"), h.get("chunk_index"))
-        entry = fused.setdefault(key, {**_hit_base(h), "fusion_rrf": 0.0})
-        entry["fusion_rrf"] += 1.0 / (kk + rank + 1)
-    for rank, h in enumerate(bm25_hits):
-        key = (h.get("doc_id"), h.get("chunk_index"))
-        entry = fused.setdefault(key, {**_hit_base(h), "fusion_rrf": 0.0})
-        entry["fusion_rrf"] += 1.0 / (kk + rank + 1)
-    if not fused:
-        return []
-    ranked = sorted(fused.values(), key=lambda x: x["fusion_rrf"], reverse=True)[:top_k]
-    max_rrf = ranked[0]["fusion_rrf"] or 1.0
-    for x in ranked:
-        x["score"] = round(x["fusion_rrf"] / max_rrf, 4)
-    return ranked
-
-
 def _rrf_select_pool(
     dense_hits: list[dict],
     bm25_hits: list[dict],
@@ -329,29 +288,28 @@ def retrieve(
                 "bm25": h.get("bm25", 0.0),
             }
 
-    # ---- 阶段3：融合 + 排序，按 HYBRID_FUSION 分支 ----
+    # ---- 阶段3：融合 + 精排（rerank 为必经链路，不可绕过）----
+    # config 已将 HYBRID_FUSION 白名单限制为 weighted / rrf_rerank，两种模式均
+    # 必须经过加权重排器（实体地板 + 阈值过滤）；原纯 RRF 旁路（mode == "rrf"，
+    # 跳过重排器直接取 Top-K）已移除，医疗问答的引用相关度必须是精排器输出分。
     mode = config.HYBRID_FUSION
-    if mode == "rrf":
-        # 纯 RRF：跳过加权重排器
-        reranked = _rrf_fuse(dense_hits, bm25_hits, top_k=top_k)
-    else:
-        reranker = get_reranker()
-        if mode == "rrf_rerank" and candidates:
-            # BGE + BM25 + RRF 串联：RRF 融合裁剪候选池 → 重排器池内精排
-            pool = _rrf_select_pool(
-                dense_hits, bm25_hits, candidates, pool_size=config.RRF_POOL_SIZE
-            )
-        else:
-            # weighted（或候选为空的兜底）：全量候选交给重排器
-            pool = list(candidates.values())
-        if not pool:
-            return []
-        reranked = reranker.rerank(
-            query,
-            pool,
-            top_k=top_k,
-            min_score=config.RERANK_MIN_SCORE,
+    reranker = get_reranker()
+    if mode == "rrf_rerank" and candidates:
+        # BGE + BM25 + RRF 串联：RRF 融合裁剪候选池 → 重排器池内精排
+        pool = _rrf_select_pool(
+            dense_hits, bm25_hits, candidates, pool_size=config.RRF_POOL_SIZE
         )
+    else:
+        # weighted（或候选为空的兜底）：全量候选交给重排器
+        pool = list(candidates.values())
+    if not pool:
+        return []
+    reranked = reranker.rerank(
+        query,
+        pool,
+        top_k=top_k,
+        min_score=config.RERANK_MIN_SCORE,
+    )
     if not reranked:
         return []
 
